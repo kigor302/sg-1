@@ -1,0 +1,53 @@
+menu "SG-1 Configuration"
+
+config WIFI_SSID
+    string "WiFi SSID"
+	default "myssid"
+	help
+		SSID (network name) for the example to connect to.
+
+config WIFI_PASSWORD
+    string "WiFi Password"
+    default "mypassword"
+	help
+		WiFi password (WPA or WPA2) for the example to use.
+
+		Can be left blank if the network has no security set.
+
+choice INPUT_RECORD
+	prompt "Record input source selection"
+	default INPUT_MIC
+	help 
+		Choose the record line source 
+
+config INPUT_MIC
+	bool "Record input source is MIC"
+config INPUT_LINE
+	bool "Record input source is LINE-IN"
+endchoice
+
+config FONT_COMIC_NEUE_25x28
+	bool "Use font COMIC_NEUE_25x28"
+	default y
+	help
+		Add the COMIC_NEUE_25x28 font to display
+
+config FONT_LIBERATION_SANS_15x16
+	bool "Use font LIBERATION_SANS_15x16"
+	default y
+	help
+		Add the LIBERATION_SANS_15x16 font to display
+
+config FONT_LIBERATION_SERIF_19x19
+	bool "Use font FONT_LIBERATION_SERIF_19x19"
+	default y
+	help
+		Add the FONT_LIBERATION_SERIF_19x19 font to display
+
+config FONT_UBUNTU_MONO_6x10
+	bool "Use font UBUNTU_MONO_6x10"
+	default y
+	help
+		Add the UBUNTU_MONO_6x10 font to display
+
+endmenu

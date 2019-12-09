@@ -1,0 +1,12 @@
+# ignore all binaries
+build/
+!build/*.bin
+!build/bootloader/*.bin
+*.old
+*.zip
+*.*~
+*.a
+*.o
+*.d
+*.*bak
+*.*back
