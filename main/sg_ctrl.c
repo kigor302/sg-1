@@ -51,10 +51,11 @@ static const uint16_t pca9555_oled_bit = (1<<15);
 static void test_display();
 ****************************************************************************************************************/
 
-/*---------------------------------------------------------*/
+/*---------------------------------------------------------*
 static int64_t GetMicro( void ) {
     return esp_timer_get_time( );
 }
+*----------------------------------------------------------*/
 
 static void pca9555_change_proc(uint16_t value)
 {	
@@ -97,7 +98,7 @@ static void gpio_task_loop(void* arg)
         	if (gpio_get_level(io_num) == 0)
         	{
         		uint16_t sr = PCA9555_get(&m_pca9555_I2C);
-            	ESP_LOGW(TAG, "GPIO[%d] intr, val: %d sr=0x%04x\n", io_num, gpio_get_level(io_num), sr);
+            	//ESP_LOGW(TAG, "GPIO[%d] intr, val: %d sr=0x%04x\n", io_num, gpio_get_level(io_num), sr);
 
             	pca9555_change_proc(sr);
             }
@@ -324,7 +325,7 @@ static void draw_track(struct SSD1306_Device * DeviceHandle, int track_num, bool
 
 	if (bcursor)
 	{
-		SSD1306_DrawEmptyRect(DeviceHandle, x, y, x+delimeters[track_num+1]-2, (y+18), !bSelected);
+		SSD1306_DrawEmptyRect(DeviceHandle, x, y, x+(delimeters[track_num+1]-delimeters[track_num]), (y+18), !bSelected);
 	}
 }
 
@@ -339,7 +340,7 @@ static void show_display_song(player_state_t * state)
 
 	sprintf(txtMsg, "Song_%d", state->song->num);
 
-	int64_t start = GetMicro( );
+	//int64_t start = GetMicro( );
 
 	/* Clear screen */
 	SSD1306_Clear(&m_Dev_I2C, false);
@@ -363,8 +364,8 @@ static void show_display_song(player_state_t * state)
 	
 	SSD1306_Update(&m_Dev_I2C);
 
-	int64_t stop = GetMicro();
-	ESP_LOGW(TAG, "* It take %d usec to draw song!!!", (int)(stop - start)); 
+	//int64_t stop = GetMicro();
+	//ESP_LOGW(TAG, "* It take %d usec to draw song!!!", (int)(stop - start)); 
 }
 
 static void show_display_equlizer(player_state_t * state)

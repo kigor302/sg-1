@@ -14,7 +14,7 @@
 #define GPIO_SDA_PIN		  18
 #define GPIO_INPUT_PIN_SEL    (1ULL<<GPIO_INT_IO_PIN)
 
-#define MAX_SONGS			  (10)
+#define MAX_SONGS			  (9)
 #define MAX_TRACKS			  (5)
 #define MAX_EQ_BANDS		  (6)
 

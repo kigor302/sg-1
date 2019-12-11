@@ -179,13 +179,14 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
                     if ( fatfs_el && track_num )
                     {
                         char track_name[32];
-                        sprintf(track_name, "/sdcard/song_%d/track_%d.wav", m_state.song->num, track_num);
+                        sprintf(track_name, "/sdcard/song_%d/track_%d.wav", m_state.song->num+1, track_num);
                         audio_element_set_uri(fatfs_el, track_name);
                         ESP_LOGI(TAG, "[ * ] Starting to play track: %s", track_name);
                         audio_pipeline_reset_elements(pipeline);
                         audio_pipeline_run(pipeline);
                         m_state.play_state = P_PLAYING;
                         set_led(OUT_LED_GREEN, true);
+                        m_state.playing_tracks = track_num;
                     }
                     break;
                 default:
@@ -221,7 +222,7 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
                     if ( fatfs_el && track_num)
                     {
                         char track_name[32];
-                        sprintf(track_name, "/sdcard/song_%d/track_%d.wav", m_state.song->num, track_num);
+                        sprintf(track_name, "/sdcard/song_%d/track_%d.wav", m_state.song->num+1, track_num);
                         audio_element_set_uri(fatfs_el, track_name);
                         ESP_LOGI(TAG, "[ * ] Starting to record track: %s", track_name);
                         audio_pipeline_reset_elements(pipeline);
@@ -250,7 +251,8 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
                 audio_element_info_t info;
                 
                 if ((m_state.rec_state == R_MUTE || m_state.rec_state == R_RECORDING) && audio_element_getinfo(fatfs_el, &info) == ESP_OK)
-                    m_state.song->tracks[m_state.recording_track].len_in_sec = (info.byte_pos / (2 * 48000));
+                    if (m_state.recording_track > 0)
+                        m_state.song->tracks[m_state.recording_track-1].len_in_sec = (info.byte_pos / (2 * 48000));
 
                 audio_pipeline_stop(pipeline_for_record);
                 audio_pipeline_wait_for_stop(pipeline_for_record);
@@ -260,6 +262,7 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
             audio_pipeline_reset_ringbuffer(pipeline_for_record);
             m_state.play_state = P_STOPED;
             m_state.rec_state = R_STOPED;
+            m_state.recording_track = m_state.playing_tracks = 0;
             set_led(OUT_LED_GREEN, false);
             set_led(OUT_LED_RED, false);
             break;
@@ -286,17 +289,22 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
             }
 
             {
-                char song_dir[] = { '/','s','d','c','a','r','d','/','s','o','n','g','_',('0'+m_state.song->num),'\0' };
+                char song_dir[] = { '/','s','d','c','a','r','d','/','s','o','n','g','_',('1'+m_state.song->num),'\0' };
                 mkdir(song_dir, 0755);
+                m_state.cursor = 0;
                 for (int i=0; i<MAX_TRACKS; i++)
                 {
                     struct stat st;
                     char filename[32];
-                    sprintf(filename, "%s/track_%d.wav",song_dir, i);
+                    sprintf(filename, "%s/track_%d.wav",song_dir, (i+1));
                     m_state.song->tracks[i].len_in_sec = (stat(filename, &st) == ESP_OK)?
                                                          (st.st_size / (2 * 48000)): 0;
+                    if (m_state.cursor == i && !m_state.song->tracks[i].len_in_sec)
+                        m_state.cursor++;
                 }
 
+                m_state.rec_selected_track = 0;
+                m_state.play_selected_tracks = 0;
                 m_state.display = D_SONG;
             }
             break; 
