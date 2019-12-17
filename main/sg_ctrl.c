@@ -93,15 +93,21 @@ static void gpio_task_loop(void* arg)
     uint32_t io_num;
     
     while (m_active) {
-        if (xQueueReceive(m_gpio_evt_queue, &io_num, (1000 / portTICK_PERIOD_MS))) {
-
+        if (xQueueReceive(m_gpio_evt_queue, &io_num, (1000 / portTICK_PERIOD_MS))) 
+        {
+        	uint16_t sr = PCA9555_get(&m_pca9555_I2C);
+        
         	if (gpio_get_level(io_num) == 0)
         	{
-        		uint16_t sr = PCA9555_get(&m_pca9555_I2C);
             	//ESP_LOGW(TAG, "GPIO[%d] intr, val: %d sr=0x%04x\n", io_num, gpio_get_level(io_num), sr);
 
             	pca9555_change_proc(sr);
             }
+        }
+        else if (gpio_get_level(io_num) == 0)
+        {
+        	 uint16_t sr = PCA9555_get(&m_pca9555_I2C);
+        	 ESP_LOGW(TAG, "GPIO[%d] intr, val: %d sr=0x%04x\n", io_num, gpio_get_level(io_num), sr);
         }
 
 #ifdef USE_ADS111X
@@ -146,7 +152,7 @@ esp_err_t init_ctrl_board()
     
     //start gpio task
     m_active = true;
-    xTaskCreate(gpio_task_loop, "gpio_task_loop", 4096, NULL, 10, NULL);
+    xTaskCreatePinnedToCore(gpio_task_loop, "gpio_task_loop", 4096, NULL, 10, NULL, 1);
 
     //install gpio isr service (already installed by other service)
     //if (ESP_OK != (ret = gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT)))
@@ -161,9 +167,6 @@ esp_err_t init_ctrl_board()
             SSD1306_SetFont( &m_Dev_I2C, /*&Font_Liberation_Sans_15x16*/&Font_Liberation_Serif_19x19/*&Font_Comic_Neue_25x28*/);
 
         	//test_display();
-        	//test_display_song();
-            //FontDrawAnchoredString( &m_Dev_I2C, "Smile!", TextAnchor_Center, true );
-            //SSD1306_Update( &m_Dev_I2C );
         }
         else
         {
@@ -271,63 +274,33 @@ static void show_display_volume(player_state_t * state)
 	SSD1306_Update(&m_Dev_I2C);
 }
 
-
-static const uint8_t track_matix[19][8] = { 
-	{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
-	{0x03, 0x80, 0x7C, 0x03, 0xE0, 0x03, 0x81, 0xFE},
-	{0x03, 0x80, 0xFF, 0x0F, 0xF0, 0x07, 0x81, 0xFE},
-	{0x07, 0x81, 0xFF, 0x0F, 0xF8, 0x07, 0x83, 0xFE},
-	{0x1F, 0x83, 0xC7, 0x9E, 0x38, 0x0F, 0x83, 0x80},
-	{0x1F, 0x83, 0x83, 0x9C, 0x38, 0x1F, 0x83, 0x80},
-	{0x1B, 0x83, 0x83, 0x80, 0x78, 0x1F, 0x83, 0xF8},
-	{0x03, 0x80, 0x03, 0x81, 0xF0, 0x3B, 0x83, 0xFC},
-	{0x03, 0x80, 0x07, 0x01, 0xE0, 0x73, 0x87, 0xFE},
-	{0x03, 0x80, 0x0F, 0x01, 0xF8, 0x73, 0x87, 0x0F},
-	{0x03, 0x80, 0x1E, 0x00, 0x3C, 0xE3, 0x80, 0x07},
-	{0x03, 0x80, 0x3C, 0x00, 0x1C, 0xC3, 0x80, 0x07},
-	{0x03, 0x80, 0x78, 0x1C, 0x1D, 0xFF, 0xE7, 0x07},
-	{0x03, 0x80, 0xF0, 0x1C, 0x1D, 0xFF, 0xE7, 0x07},
-	{0x03, 0x81, 0xE0, 0x1E, 0x3D, 0xFF, 0xE7, 0x8E},
-	{0x03, 0x81, 0xFF, 0x8F, 0xF8, 0x03, 0x83, 0xFE},
-	{0x03, 0x83, 0xFF, 0x87, 0xF0, 0x03, 0x81, 0xFC},
-	{0x03, 0x83, 0xFF, 0x83, 0xE0, 0x03, 0x80, 0xF8},
-	{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+static uint8_t fonts_12x8[5][18] = {
+/* 1 */{0x00, 0x0C, 0x0C, 0xFE, 0xFE, 0x00, 0x00, 0x00, 0, 0x0, 0x6, 0x6, 0x7, 0x7, 0x6, 0x6, 0x0, 0}, 
+/* 2 */{0x00, 0x0C, 0x06, 0x86, 0xC6, 0x66, 0x3E, 0x1C, 0, 0x0, 0x6, 0x7, 0x7, 0x6, 0x6, 0x6, 0x6, 0},
+/* 3 */{0x00, 0x0C, 0x66, 0x66, 0x66, 0x66, 0xFE, 0xDC, 0, 0x0, 0x3, 0x6, 0x6, 0x6, 0x6, 0x7, 0x3, 0},
+/* 4 */{0x00, 0xC0, 0xF0, 0xBC, 0x8E, 0xFE, 0xFE, 0x80, 0, 0x0, 0x1, 0x1, 0x1, 0x1, 0x7, 0x7, 0x1, 0},
+/* 5 */{0x00, 0x7E, 0x7E, 0x66, 0x66, 0x66, 0xE6, 0xC6, 0, 0x0, 0x3, 0x6, 0x6, 0x6, 0x6, 0x7, 0x3, 0}
 };
-
-static const uint8_t delimeters[] = { 2, 12, 26, 38, 52, 64 }; 
 
 static void draw_track(struct SSD1306_Device * DeviceHandle, int track_num, bool bSelected, int offs, bool bcursor)
 {
-	uint32_t x = delimeters[track_num]-2 + offs, y = (DeviceHandle->Height - 19);
+	uint32_t x = 2 + (13 * track_num) + offs, y = (DeviceHandle->Height - 16);
 	uint32_t offset = DeviceHandle->Width * (y/8) + x;
 	uint8_t *display = DeviceHandle->Framebuffer + offset;
-	uint8_t display_bit, matrix_bit, *ptr;
-	bool bPixel; 
-
-	for (int c=delimeters[track_num]; c<delimeters[track_num+1]; c++, display++)
-	{
-		display_bit = (1 << (y&7));
-		matrix_bit  = (0x80 >> (c & 7));
-		ptr = display;  
-
-		for (int r=y; r<(y+19); r++)
-		{
-			bPixel = !!(track_matix[r-y][c/8] & matrix_bit);
-			if (bPixel ^ bSelected) 
-				*ptr |= display_bit;
-			if (!(display_bit <<= 1))
-			{
-				display_bit = 1;
-				ptr += DeviceHandle->Width;
-			}
-		}
-	}
+	
+	/* Print track align with 16-bit */	
+	for (int i=0; i<9; i++)
+		display[i] = bSelected? (0xFF ^ fonts_12x8[track_num][i]): fonts_12x8[track_num][i];
+	display += DeviceHandle->Width;
+	for (int i=0; i<9; i++)
+		display[i] = bSelected? (0x0F ^ fonts_12x8[track_num][9+i]): (fonts_12x8[track_num][9+i] & 0x0F);
 
 	if (bcursor)
 	{
-		SSD1306_DrawEmptyRect(DeviceHandle, x, y, x+(delimeters[track_num+1]-delimeters[track_num]), (y+18), !bSelected);
+		SSD1306_DrawEmptyRect(DeviceHandle, x-2, y-2, x+8+2, (y+12+2), true);
 	}
 }
+
 
 static void show_display_song(player_state_t * state)
 {
@@ -338,7 +311,7 @@ static void show_display_song(player_state_t * state)
 	if (!state || !state->song || !m_active || m_Dev_I2C.Width < 128)
 		return;
 
-	sprintf(txtMsg, "Song_%d", state->song->num);
+	sprintf(txtMsg, "Song_%d", state->song->num+1);
 
 	//int64_t start = GetMicro( );
 
@@ -358,8 +331,8 @@ static void show_display_song(player_state_t * state)
 	for (int i=0; i<MAX_TRACKS; i++)
 	{
 		if (state->song->tracks[i].len_in_sec > 0)
-			draw_track(&m_Dev_I2C, i, state->play_selected_tracks & (1<<i), 0, (state->cursor==i));
-		draw_track(&m_Dev_I2C, i, ((i+1)==state->rec_selected_track), m_Dev_I2C.Width/2+1, (state->cursor==(i+MAX_TRACKS)));
+			draw_track(&m_Dev_I2C, i, state->play_selected_tracks & (1<<i), 0, (state->song->cursor==i));
+		draw_track(&m_Dev_I2C, i, ((i+1)==state->rec_selected_track), m_Dev_I2C.Width/2 + 1, (state->song->cursor==(i+MAX_TRACKS)));
 	}
 	
 	SSD1306_Update(&m_Dev_I2C);

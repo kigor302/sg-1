@@ -99,10 +99,13 @@ void SSD1306_DrawEmptyRect( struct SSD1306_Device* DeviceHandle, int x, int y, i
     NullCheck( DeviceHandle, return );
     NullCheck( DeviceHandle->Framebuffer, return );
 
+    if (x2 >= DeviceHandle->Width)
+        x2 = (DeviceHandle->Width - 1);
+    if (y2 >= DeviceHandle->Height)
+        y2 = DeviceHandle->Height - 1;
+
     CheckBounds( x >= DeviceHandle->Width, return );
-    CheckBounds( ( x2 ) >= DeviceHandle->Width, return );
     CheckBounds( y >= DeviceHandle->Height, return );
-    CheckBounds( ( y2 ) >= DeviceHandle->Height, return );
 
     SSD1306_DrawHLine( DeviceHandle, x, y, x2, Color );
     SSD1306_DrawHLine( DeviceHandle, x, y2, x2, Color );

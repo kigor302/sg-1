@@ -133,7 +133,7 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
                 {
                     m_state.rec_opt.rec_source = (REC_SOURCE_E)!m_state.rec_opt.rec_source;
                     audio_hal_ctrl_codec(board_handle->audio_hal, 
-                        ((m_state.rec_opt.rec_source == SRC_MIC)? AUDIO_HAL_CODEC_MODE_DECODE:
+                        ((m_state.rec_opt.rec_source == SRC_MIC)? AUDIO_HAL_CODEC_MODE_ENCODE:
                                                                   AUDIO_HAL_CODEC_MODE_LINE_IN),
                         AUDIO_HAL_CTRL_START);
                 }
@@ -144,6 +144,23 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
                                         (m_state.rec_opt.bmonitor? AUDIO_HAL_CTRL_START: AUDIO_HAL_CTRL_STOP));
                 }
             }
+
+            /*********** For internal test *********************
+            {
+                int underun=0, overflow=0, start=0, stop=0;
+                audio_element_handle_t i2s_el = audio_pipeline_get_el_by_tag(pipeline_for_play, "i2s");
+                audio_element_handle_t i2s_el2 = audio_pipeline_get_el_by_tag(pipeline_for_record, "i2s");
+                if (audio_element_get_state(i2s_el) == AEL_STATE_RUNNING)
+                    i2s_get_errors(i2s_el, &underun, NULL, &start, &stop);
+                if (audio_element_get_state(i2s_el2) == AEL_STATE_RUNNING)
+                    i2s_get_errors(i2s_el2, NULL, &overflow, &start, &stop);
+                if (underun || overflow || start || stop)
+                {
+                    ESP_LOGW(TAG, "[ !!! ] TX-underuns=%d, RX-overflows=%d  Start=%d/%d", underun, overflow, start, stop);
+                }
+            }
+            ****************************************************/
+
             break; 
 
         case BT_PLAY:
@@ -188,6 +205,10 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
                         set_led(OUT_LED_GREEN, true);
                         m_state.playing_tracks = track_num;
                     }
+                    else if (!track_num)
+                    {
+                        ESP_LOGI(TAG, "[ * ] Please, select at least one track");
+                    }
                     break;
                 default:
                     break;
@@ -204,16 +225,21 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
             audio_element_state_t el_state = audio_element_get_state(i2s_el);
             switch (el_state) {
                 case AEL_STATE_RUNNING :
-                    ESP_LOGI(TAG, "[ * ] Mute rec audio pipeline");
-                    audio_hal_set_mute(board_handle->audio_hal, true);
-                    m_state.rec_state = R_MUTE;
-                    set_led(OUT_LED_RED, false);
-                    break;
                 case AEL_STATE_PAUSED :
-                    ESP_LOGI(TAG, "[ * ] Unmute rec audio pipeline");
-                    audio_hal_set_mute(board_handle->audio_hal, false);
-                    m_state.rec_state = R_RECORDING;
-                    set_led(OUT_LED_RED, true);
+                    if (m_state.rec_state == R_RECORDING)
+                    {
+                        ESP_LOGI(TAG, "[ * ] Mute rec audio pipeline");
+                        audio_hal_set_mute(board_handle->audio_hal, true);
+                        m_state.rec_state = R_MUTE;
+                        set_led(OUT_LED_RED, false);
+                    }
+                    else
+                    {
+                        ESP_LOGI(TAG, "[ * ] Unmute rec audio pipeline");
+                        audio_hal_set_mute(board_handle->audio_hal, false);
+                        m_state.rec_state = R_RECORDING;
+                        set_led(OUT_LED_RED, true);
+                    }
                     break;
                 case AEL_STATE_INIT :
                     ESP_LOGI(TAG, "[ * ] Starting rec audio pipeline");
@@ -223,6 +249,7 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
                     {
                         char track_name[32];
                         sprintf(track_name, "/sdcard/song_%d/track_%d.wav", m_state.song->num+1, track_num);
+                        fclose(fopen(track_name, "wb"));
                         audio_element_set_uri(fatfs_el, track_name);
                         ESP_LOGI(TAG, "[ * ] Starting to record track: %s", track_name);
                         audio_pipeline_reset_elements(pipeline);
@@ -290,8 +317,8 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
 
             {
                 char song_dir[] = { '/','s','d','c','a','r','d','/','s','o','n','g','_',('1'+m_state.song->num),'\0' };
-                mkdir(song_dir, 0755);
-                m_state.cursor = 0;
+                mkdir(song_dir, 0777);
+                m_state.song->cursor = 0;
                 for (int i=0; i<MAX_TRACKS; i++)
                 {
                     struct stat st;
@@ -299,9 +326,11 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
                     sprintf(filename, "%s/track_%d.wav",song_dir, (i+1));
                     m_state.song->tracks[i].len_in_sec = (stat(filename, &st) == ESP_OK)?
                                                          (st.st_size / (2 * 48000)): 0;
-                    if (m_state.cursor == i && !m_state.song->tracks[i].len_in_sec)
-                        m_state.cursor++;
+                    if (m_state.song->cursor == i && !m_state.song->tracks[i].len_in_sec)
+                        m_state.song->cursor++;
                 }
+
+                ESP_LOGI(TAG, "### Cursor=%d ###", m_state.song->cursor);
 
                 m_state.rec_selected_track = 0;
                 m_state.play_selected_tracks = 0;
@@ -318,12 +347,12 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
             {
                 if (m_state.volume.play_vol_selected)
                 {
-                    m_state.volume.play_volume = (m_state.volume.play_volume+((bt==EN_VOLUME_UP)?5:-5)) % 100;
+                    m_state.volume.play_volume = (uint)(m_state.volume.play_volume+((bt==EN_VOLUME_UP)?5:-5)) % 100;
                     audio_hal_set_volume(board_handle->audio_hal, ((m_state.volume.play_volume*63)/100) );
                 }
                 else
                 {
-                    m_state.volume.rec_volume = (m_state.volume.rec_volume+((bt==EN_VOLUME_UP)?5:-5)) % 100;
+                    m_state.volume.rec_volume = (uint)(m_state.volume.rec_volume+((bt==EN_VOLUME_UP)?5:-5)) % 100;
                     audio_hal_set_recvolume(board_handle->audio_hal, m_state.volume.rec_volume);
                 }
             }
@@ -343,157 +372,6 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
 }
 
 
-//#define MAX_TRACKS  (3)
-//static int  play_track = 1, record_track = 0;
-
-/* Events proccessing */
-//typedef enum { SG_MODE_VOL=0, SG_MODE_PLAY, SG_MODE_REC, SG_MODE_MONITOR, SG_MAX_MODE }sg_mode_t; 
-//const char * set_modes[] = {  "VOLUME", "PLAY TRACK", "RECORD TRACK", "MONITOR Enable/Disable", "N/A" };
-//static sg_mode_t current_mode = SG_MODE_VOL;
-
-static esp_err_t input_key_service_cb(periph_service_handle_t handle, periph_service_event_t *evt, void *ctx)
-{
-#if 0    
-    /* Handle touch pad events
-           to start, pause, resume, finish current song and adjust volume
-    */
-    audio_board_handle_t board_handle = (audio_board_handle_t) ctx;
-    int  player_volume = 50;
-
-    /* Handle debouncing and push release effect */
-    static uint last_tick = 0,  last_button = 0;
-    if ((last_button == (int)evt->data) && (xTaskGetTickCount() - last_tick) < pdMS_TO_TICKS(1000))// == INPUT_KEY_SERVICE_ACTION_CLICK_RELEASE) 
-    {
-        last_button = 0; 
-        last_tick = 0;
-        return ESP_OK;
-    }
-    last_tick = xTaskGetTickCount();
-    last_button = (int)evt->data;
-    
-    audio_hal_get_volume(board_handle->audio_hal, &player_volume);
-
-    switch ((int)evt->data) {
-        
-        case BUTTON_REC_ID:
-        //case BUTTON_PLAY_ID:
-            {
-            bool bPlay = ((int)evt->data != BUTTON_REC_ID);
-            audio_pipeline_handle_t pipeline = bPlay? pipeline_for_play: pipeline_for_record;
-            int  * track_num =  bPlay? &play_track:  &record_track;
-            audio_element_handle_t fatfs_el = audio_pipeline_get_el_by_tag(pipeline, "file");
-            audio_element_handle_t i2s_el = audio_pipeline_get_el_by_tag(pipeline, "i2s");
-            
-            ESP_LOGI(TAG, "[ * ] [%s] input key event",  (bPlay?"Play":"Record"));
-            audio_element_state_t el_state = audio_element_get_state(i2s_el);
-            switch (el_state) {
-                case AEL_STATE_RUNNING :
-                    ESP_LOGI(TAG, "[ * ] Pausing audio pipeline");
-                    audio_pipeline_pause(pipeline);
-                    break;
-                case AEL_STATE_PAUSED :
-                    ESP_LOGI(TAG, "[ * ] Resuming audio pipeline");
-                    audio_pipeline_resume(pipeline);
-                    break;
-                case AEL_STATE_INIT :
-                    ESP_LOGI(TAG, "[ * ] Starting audio pipeline");
-                case AEL_STATE_STOPPED:
-                case AEL_STATE_FINISHED:
-                    if ( fatfs_el )
-                    {
-                        char new_track[] = { '/','s','d','c','a','r','d','/','t','r','a','c','k','_','0'+*track_num,'.','w','a','v','\0' };
-                        audio_element_set_uri(fatfs_el, new_track);
-                        ESP_LOGI(TAG, "[ * ] Starting %s new track: %s", (bPlay?"Play":"Record"), new_track);
-                        audio_pipeline_reset_elements(pipeline);
-                        audio_pipeline_run(pipeline);
-                    }
-                    break;
-
-                default :
-                    ESP_LOGW(TAG, "[ * ] Not supported state %d for element %p (%p)", el_state, i2s_el, fatfs_el);
-            }
-            }
-            break;
-
-        case BUTTON_SET_ID:
-            ESP_LOGI(TAG, "[ * ] [Set] input key event (stop recording and playing)");
-            if (AEL_STATE_FINISHED != audio_element_get_state(i2s_stream_reader))
-            {
-                audio_pipeline_stop(pipeline_for_play);
-                audio_pipeline_wait_for_stop(pipeline_for_play);
-            }
-
-            if (AEL_STATE_RUNNING == audio_element_get_state(i2s_stream_reader))
-            {
-                audio_pipeline_stop(pipeline_for_record);
-                audio_pipeline_wait_for_stop(pipeline_for_record);
-            }
-            audio_pipeline_reset_ringbuffer(pipeline_for_play);
-            audio_pipeline_reset_ringbuffer(pipeline_for_record);
-            break;
-/*
-        case BUTTON_VOLUP_ID:
-            if (current_mode == SG_MODE_VOL)
-            {
-                player_volume += 10;
-                if (player_volume > 63) {
-                    player_volume = 63;
-                }
-                audio_hal_set_volume(board_handle->audio_hal, player_volume);
-                ESP_LOGI(TAG, "[ * ] Volume set to %d %%", player_volume);
-            }
-            else if (current_mode == SG_MODE_PLAY)
-            {
-                play_track = ((play_track + 1) % MAX_TRACKS);
-                ESP_LOGI(TAG, "[ * ] Play track changed to: %d", play_track);
-            }
-            else if (current_mode == SG_MODE_REC)
-            {
-                record_track = ((record_track + 1) % MAX_TRACKS);
-                ESP_LOGI(TAG, "[ * ] Record track changed to: %d", record_track);
-            }
-            else if (current_mode == SG_MODE_MONITOR)
-            {
-                audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_PASSTHROUGH, AUDIO_HAL_CTRL_START);    
-                ESP_LOGI(TAG, "[ * ] Monitor is enabled");
-            }
-            break;
-
-        case BUTTON_VOLDOWN_ID:
-            if (current_mode == SG_MODE_VOL)
-            {
-                player_volume -= 10;
-                if (player_volume < 0) {
-                    player_volume = 0;
-                }
-                audio_hal_set_volume(board_handle->audio_hal, player_volume);
-                ESP_LOGI(TAG, "[ * ] Volume set to %d %%", player_volume);
-            }
-            else if (current_mode == SG_MODE_PLAY)
-            {
-                record_track = (!play_track?MAX_TRACKS:play_track) - 1;
-                ESP_LOGI(TAG, "[ * ] Play track changed to: %d", play_track);
-            }
-            else if (current_mode == SG_MODE_REC)
-            {
-                record_track = (!record_track?MAX_TRACKS:record_track) - 1;
-                ESP_LOGI(TAG, "[ * ] Record track changed to: %d", record_track);
-            }
-            else if (current_mode == SG_MODE_MONITOR)
-            {
-                audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_PASSTHROUGH, AUDIO_HAL_CTRL_STOP);    
-                ESP_LOGI(TAG, "[ * ] Monitor is disabled");
-            }
-            break;
-*/
-        case BUTTON_MODE_ID:
-            current_mode = (sg_mode_t)((current_mode+1) % SG_MAX_MODE);
-            ESP_LOGI(TAG, "[ * ] %s select mode",set_modes[current_mode]);
-            break;
-    }
-#endif
-    return ESP_OK;
-}
 
 void i2s_fatfs_event(audio_event_iface_msg_t * msg)
 {
@@ -513,7 +391,7 @@ void i2s_stream_event(audio_event_iface_msg_t * msg)
                 audio_pipeline_wait_for_stop(pipeline);
                 audio_pipeline_reset_ringbuffer(pipeline);
 
-                if (pipeline==pipeline_for_play)
+                if (pipeline == pipeline_for_play)
                 {
                     set_led(OUT_LED_GREEN, false);
                     m_state.play_state = P_STOPED;
@@ -546,8 +424,8 @@ static void wav_codec_event(audio_event_iface_msg_t * msg)
                 ESP_LOGI(TAG, "[ * ] Receive music info from wav %s, sample_rates=%d, bits=%d, ch=%d",
                                             (bDecoder?"decoder":"encoder"), music_info.sample_rates, music_info.bits, music_info.channels);
 
-                //audio_element_setinfo(i2s_stream_writer, &music_info);
-                //audio_element_setinfo(i2s_stream_reader, &music_info);
+                audio_element_setinfo(i2s_stream_writer, &music_info);
+                audio_element_setinfo(i2s_stream_reader, &music_info);
                 rsp_filter_set_src_info((bDecoder?resample_for_play:resample_for_rec), music_info.sample_rates, music_info.channels);
             }
             break;
@@ -575,6 +453,7 @@ static audio_pipeline_handle_t setup_record_pipeline(const char * url, int sampl
     */
     fatfs_stream_cfg_t fatfs_write_cfg = FATFS_STREAM_CFG_DEFAULT();
     fatfs_write_cfg.out_rb_size = (160 * 1024);
+    fatfs_write_cfg.buf_sz = (1024 * 32);
     fatfs_write_cfg.type = AUDIO_STREAM_WRITER;
     fatfs_stream_writer = fatfs_stream_init(&fatfs_write_cfg);
     audio_element_set_uri(fatfs_stream_writer, url);
@@ -582,7 +461,9 @@ static audio_pipeline_handle_t setup_record_pipeline(const char * url, int sampl
     i2s_stream_cfg_t i2s_file_cfg = I2S_STREAM_CFG_DEFAULT();
     i2s_file_cfg.type = AUDIO_STREAM_READER;
     i2s_file_cfg.i2s_config.sample_rate = 48000;
-    i2s_file_cfg.task_prio = 4;
+    i2s_file_cfg.out_rb_size = (16 * 1024);
+    //i2s_file_cfg.task_prio = 4;
+    //i2s_file_cfg.task_core = 1; /* !!!! */
     i2s_stream_reader = i2s_stream_init(&i2s_file_cfg);
 
     wav_encoder_cfg_t wav_file_cfg = DEFAULT_WAV_ENCODER_CONFIG();
@@ -601,7 +482,7 @@ static audio_pipeline_handle_t setup_record_pipeline(const char * url, int sampl
     audio_pipeline_register(pipeline, resample_for_rec, "filter");
     audio_pipeline_register(pipeline, fatfs_stream_writer, "file");
 
-    audio_pipeline_link(pipeline, (const char *[]) {"i2s", /*"filter",*/ "wav", "file"}, 3/*4*/);
+    audio_pipeline_link(pipeline, (const char *[]) {"i2s", "filter", "wav", "file"}, 4);
     
     return pipeline;
 }
@@ -616,7 +497,9 @@ static audio_pipeline_handle_t setup_record_pipeline(const char * url, int sampl
     ESP_LOGI(TAG, "- Create i2s stream to write data to codec chip");
     i2s_stream_cfg_t i2s_cfg = I2S_STREAM_CFG_DEFAULT();
     i2s_cfg.i2s_config.sample_rate = 48000;
-    i2s_cfg.task_prio = 4;
+    i2s_cfg.out_rb_size = (16 * 1024);
+    //i2s_cfg.task_prio = 4;
+    //i2s_cfg.task_core = 1; /* !!!! */
     i2s_cfg.type = AUDIO_STREAM_WRITER;
     i2s_stream_writer = i2s_stream_init(&i2s_cfg);
 
@@ -635,9 +518,10 @@ static audio_pipeline_handle_t setup_record_pipeline(const char * url, int sampl
     fatfs_stream_cfg_t fatfs_read_cfg = FATFS_STREAM_CFG_DEFAULT();
     fatfs_read_cfg.type = AUDIO_STREAM_READER;
     fatfs_read_cfg.out_rb_size = (160 * 1024);
+    fatfs_read_cfg.buf_sz = (1024 * 32);
     fatfs_stream_reader = fatfs_stream_init(&fatfs_read_cfg);
 
-    audio_element_set_uri(fatfs_stream_reader, url);
+    //audio_element_set_uri(fatfs_stream_reader, url);
 
 
     /* ZL38063 audio chip on board of ESP32-LyraTD-MSC does not support 44.1 kHz sampling frequency,
@@ -649,10 +533,12 @@ static audio_pipeline_handle_t setup_record_pipeline(const char * url, int sampl
     rsp_cfg.dest_rate = rsp_cfg.src_rate = 48000;
     resample_for_play = rsp_filter_init(&rsp_cfg);
 
+    /*
     ESP_LOGI(TAG, "- Create a ringbuffer and insert it between mp3 decoder and i2s writer");
-    //ringbuf_handle_t ringbuf = rb_create(16 * 1024, 1);
-    //audio_element_set_input_ringbuf(i2s_stream_writer, ringbuf);
-    //audio_element_set_output_ringbuf(wav_decoder, ringbuf);
+    ringbuf_handle_t ringbuf = rb_create(16 * 1024, 1);
+    audio_element_set_input_ringbuf(i2s_stream_writer, ringbuf);
+    audio_element_set_output_ringbuf(wav_decoder, ringbuf);
+    */
 
     ESP_LOGI(TAG, "- Register all elements to audio pipeline");
     audio_pipeline_register(pipeline, fatfs_stream_reader, "file");
@@ -661,7 +547,7 @@ static audio_pipeline_handle_t setup_record_pipeline(const char * url, int sampl
     audio_pipeline_register(pipeline, i2s_stream_writer, "i2s");
 
     ESP_LOGI(TAG, "- Link it together [file]-->wav_decoder-->i2s_stream-->[codec_chip]");
-    audio_pipeline_link(pipeline, (const char *[]) {"file", "wav", /*"filter",*/ "i2s"}, 3/*4*/);
+    audio_pipeline_link(pipeline, (const char *[]) {"file", "wav", "filter", "i2s"}, 4);
 
     return pipeline;
 }
@@ -714,13 +600,14 @@ void app_main(void)
 #endif
     audio_hal_set_volume(board_handle->audio_hal, (m_state.volume.play_volume*63)/100);
     audio_hal_set_recvolume(board_handle->audio_hal, m_state.volume.rec_volume);
-        
+     
+    /*    
     ESP_LOGI(TAG, "[ 3 ] Create and start input key service");
     input_key_service_info_t input_key_info[] = INPUT_KEY_DEFAULT_INFO();
     periph_service_handle_t input_ser = input_key_service_create(set);
     input_key_service_add_key(input_ser, input_key_info, INPUT_KEY_NUM);
     periph_service_set_callback(input_ser, input_key_service_cb, (void *)board_handle);
-
+    */
     pipeline_for_play = setup_play_pipeline("/sdcard/track_0.wav");
     pipeline_for_record = setup_record_pipeline("/sdcard/track_0.wav", 48000 /*sampling rate HZ*/, 2/*channels*/);
 
@@ -740,6 +627,7 @@ void app_main(void)
         registrate_cb(button_ctrl_proc);
 
     button_ctrl_proc(BT_FORWARD, EVT_PRESSED);
+    button_ctrl_proc(BT_REWARD, EVT_PRESSED);
 
     ESP_LOGW(TAG, "[ 5 ] Press the keys to control music player:");
     ESP_LOGW(TAG, "      [Play/Record] to start/Record, pause/mute and resume, [<< / >>] Stop and go to next song.");
@@ -766,8 +654,8 @@ void app_main(void)
             i2s_stream_event(&msg);
         else if (msg.source_type == PERIPH_ID_BUTTON)
         {
-             periph_service_event_t evt = { .type = msg.source_type, .source=msg.source, .data = msg.data, .len = msg.data_len };
-             input_key_service_cb(input_ser, &evt, board_handle);
+             //periph_service_event_t evt = { .type = msg.source_type, .source=msg.source, .data = msg.data, .len = msg.data_len };
+             //input_key_service_cb(input_ser, &evt, board_handle);
         }
         else {
             ESP_LOGW(TAG, "[ * ] event from type=%d, source=%p", msg.source_type, msg.source);
