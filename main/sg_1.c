@@ -16,7 +16,7 @@
 #include "audio_pipeline.h"
 #include "audio_event_iface.h"
 #include "audio_common.h"
-//#include "sdcard_stream.h"
+#include "sdcard_stream.h"
 #include "fatfs_stream.h"
 #include "i2s_stream.h"
 #include "mp3_decoder.h"
@@ -37,7 +37,6 @@
 #include "board.h"
 #include "sg1.h"
 #include "sg_ctrl.h"
-
 
 static const char *TAG = "SG-1";
 
@@ -279,7 +278,7 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
                 
                 if ((m_state.rec_state == R_MUTE || m_state.rec_state == R_RECORDING) && audio_element_getinfo(fatfs_el, &info) == ESP_OK)
                     if (m_state.recording_track > 0)
-                        m_state.song->tracks[m_state.recording_track-1].len_in_sec = (info.byte_pos / (2 * 48000));
+                        m_state.song->tracks[m_state.recording_track-1].len_in_sec = (info.byte_pos / (2 * CONFIG_BITRATE_SAMPLING));
 
                 audio_pipeline_stop(pipeline_for_record);
                 audio_pipeline_wait_for_stop(pipeline_for_record);
@@ -292,6 +291,9 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
             m_state.recording_track = m_state.playing_tracks = 0;
             set_led(OUT_LED_GREEN, false);
             set_led(OUT_LED_RED, false);
+
+            //runSDTest();
+
             break;
 
         case BT_FORWARD:
@@ -325,12 +327,10 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
                     char filename[32];
                     sprintf(filename, "%s/track_%d.wav",song_dir, (i+1));
                     m_state.song->tracks[i].len_in_sec = (stat(filename, &st) == ESP_OK)?
-                                                         (st.st_size / (2 * 48000)): 0;
+                                                         (st.st_size / (2 * CONFIG_BITRATE_SAMPLING)): 0;
                     if (m_state.song->cursor == i && !m_state.song->tracks[i].len_in_sec)
                         m_state.song->cursor++;
                 }
-
-                ESP_LOGI(TAG, "### Cursor=%d ###", m_state.song->cursor);
 
                 m_state.rec_selected_track = 0;
                 m_state.play_selected_tracks = 0;
@@ -423,9 +423,13 @@ static void wav_codec_event(audio_event_iface_msg_t * msg)
 
                 ESP_LOGI(TAG, "[ * ] Receive music info from wav %s, sample_rates=%d, bits=%d, ch=%d",
                                             (bDecoder?"decoder":"encoder"), music_info.sample_rates, music_info.bits, music_info.channels);
-
-                audio_element_setinfo(i2s_stream_writer, &music_info);
-                audio_element_setinfo(i2s_stream_reader, &music_info);
+                /*
+                if (m_state.rec_state == P_STOPED)
+                {
+                    audio_element_setinfo(i2s_stream_writer, &music_info);
+                    audio_element_setinfo(i2s_stream_reader, &music_info);
+                }
+                */
                 rsp_filter_set_src_info((bDecoder?resample_for_play:resample_for_rec), music_info.sample_rates, music_info.channels);
             }
             break;
@@ -439,6 +443,8 @@ static void wav_codec_event(audio_event_iface_msg_t * msg)
 
 static audio_pipeline_handle_t setup_record_pipeline(const char * url, int sample_rates, int channels)
 {
+    audio_element_info_t info;
+
     ESP_LOGI(TAG, "- Create audio pipeline for record");
     audio_pipeline_cfg_t pipeline_cfg = DEFAULT_AUDIO_PIPELINE_CONFIG();
     audio_pipeline_handle_t pipeline = audio_pipeline_init(&pipeline_cfg);
@@ -452,30 +458,38 @@ static audio_pipeline_handle_t setup_record_pipeline(const char * url, int sampl
     fatfs_stream_writer = sdcard_stream_init(&sdcard_write_cfg);
     */
     fatfs_stream_cfg_t fatfs_write_cfg = FATFS_STREAM_CFG_DEFAULT();
-    fatfs_write_cfg.out_rb_size = (160 * 1024);
-    fatfs_write_cfg.buf_sz = (1024 * 32);
+    fatfs_write_cfg.out_rb_size = (32 * 6 * 1024);
+    fatfs_write_cfg.buf_sz = (1024 * 24);
     fatfs_write_cfg.type = AUDIO_STREAM_WRITER;
     fatfs_stream_writer = fatfs_stream_init(&fatfs_write_cfg);
     audio_element_set_uri(fatfs_stream_writer, url);
+    audio_element_getinfo(fatfs_stream_writer, &info);
+    info.sample_rates = CONFIG_BITRATE_SAMPLING;
+    audio_element_setinfo(fatfs_stream_writer, &info);
+
 
     i2s_stream_cfg_t i2s_file_cfg = I2S_STREAM_CFG_DEFAULT();
     i2s_file_cfg.type = AUDIO_STREAM_READER;
-    i2s_file_cfg.i2s_config.sample_rate = 48000;
+    i2s_file_cfg.i2s_config.sample_rate = CONFIG_BITRATE_SAMPLING;
     i2s_file_cfg.out_rb_size = (16 * 1024);
-    //i2s_file_cfg.task_prio = 4;
-    //i2s_file_cfg.task_core = 1; /* !!!! */
     i2s_stream_reader = i2s_stream_init(&i2s_file_cfg);
 
     wav_encoder_cfg_t wav_file_cfg = DEFAULT_WAV_ENCODER_CONFIG();
     wav_encoder = wav_encoder_init(&wav_file_cfg);
+    audio_element_getinfo(wav_encoder, &info);
+    info.sample_rates = CONFIG_BITRATE_SAMPLING;
+    audio_element_setinfo(wav_encoder, &info);
+
 
     rsp_filter_cfg_t rsp_filter_cfg = DEFAULT_RESAMPLE_FILTER_CONFIG();
-    rsp_filter_cfg.src_rate = 48000;
-    rsp_filter_cfg.src_ch = 2;
-    rsp_filter_cfg.dest_rate = sample_rates;
-    rsp_filter_cfg.dest_ch = channels;
+    rsp_filter_cfg.src_rate = rsp_filter_cfg.dest_rate = CONFIG_BITRATE_SAMPLING;
+    rsp_filter_cfg.src_ch = rsp_filter_cfg.dest_ch = 2;
     rsp_filter_cfg.mode = RESAMPLE_DECODE_MODE;
     resample_for_rec = rsp_filter_init(&rsp_filter_cfg);
+    audio_element_getinfo(resample_for_rec, &info);
+    info.sample_rates = CONFIG_BITRATE_SAMPLING;
+    audio_element_setinfo(resample_for_rec, &info);
+
 
     audio_pipeline_register(pipeline, i2s_stream_reader, "i2s");
     audio_pipeline_register(pipeline, wav_encoder, "wav");
@@ -489,6 +503,8 @@ static audio_pipeline_handle_t setup_record_pipeline(const char * url, int sampl
 
  static struct audio_pipeline * setup_play_pipeline(const char * url)
 {
+    audio_element_info_t info;
+
     ESP_LOGI(TAG, "- Create audio pipeline for playback");
     audio_pipeline_cfg_t pipeline_cfg = DEFAULT_AUDIO_PIPELINE_CONFIG();
     audio_pipeline_handle_t pipeline = audio_pipeline_init(&pipeline_cfg);
@@ -496,16 +512,18 @@ static audio_pipeline_handle_t setup_record_pipeline(const char * url, int sampl
 
     ESP_LOGI(TAG, "- Create i2s stream to write data to codec chip");
     i2s_stream_cfg_t i2s_cfg = I2S_STREAM_CFG_DEFAULT();
-    i2s_cfg.i2s_config.sample_rate = 48000;
+    i2s_cfg.i2s_config.sample_rate = CONFIG_BITRATE_SAMPLING;
     i2s_cfg.out_rb_size = (16 * 1024);
-    //i2s_cfg.task_prio = 4;
-    //i2s_cfg.task_core = 1; /* !!!! */
     i2s_cfg.type = AUDIO_STREAM_WRITER;
     i2s_stream_writer = i2s_stream_init(&i2s_cfg);
+
 
     ESP_LOGI(TAG, "- Create wav decoder to decode wav file");
     wav_decoder_cfg_t wav_cfg = DEFAULT_WAV_DECODER_CONFIG();
     wav_decoder = wav_decoder_init(&wav_cfg);
+    audio_element_getinfo(wav_decoder, &info);
+    info.sample_rates = CONFIG_BITRATE_SAMPLING;
+    audio_element_setinfo(wav_decoder, &info);
 
 
     ESP_LOGI(TAG, "- Play [%s] from sdcard", url);
@@ -517,9 +535,12 @@ static audio_pipeline_handle_t setup_record_pipeline(const char * url, int sampl
     */
     fatfs_stream_cfg_t fatfs_read_cfg = FATFS_STREAM_CFG_DEFAULT();
     fatfs_read_cfg.type = AUDIO_STREAM_READER;
-    fatfs_read_cfg.out_rb_size = (160 * 1024);
+    fatfs_read_cfg.out_rb_size = (32 * 4 * 1024);
     fatfs_read_cfg.buf_sz = (1024 * 32);
     fatfs_stream_reader = fatfs_stream_init(&fatfs_read_cfg);
+    audio_element_getinfo(fatfs_stream_reader, &info);
+    info.sample_rates = CONFIG_BITRATE_SAMPLING;
+    audio_element_setinfo(fatfs_stream_reader, &info);
 
     //audio_element_set_uri(fatfs_stream_reader, url);
 
@@ -530,8 +551,12 @@ static audio_pipeline_handle_t setup_record_pipeline(const char * url, int sampl
     */
     ESP_LOGI(TAG, "- Create resample filter");
     rsp_filter_cfg_t rsp_cfg = DEFAULT_RESAMPLE_FILTER_CONFIG();
-    rsp_cfg.dest_rate = rsp_cfg.src_rate = 48000;
+    rsp_cfg.dest_rate = rsp_cfg.src_rate = CONFIG_BITRATE_SAMPLING;
     resample_for_play = rsp_filter_init(&rsp_cfg);
+    audio_element_getinfo(resample_for_play, &info);
+    info.sample_rates = CONFIG_BITRATE_SAMPLING;
+    audio_element_setinfo(resample_for_play, &info);
+ 
 
     /*
     ESP_LOGI(TAG, "- Create a ringbuffer and insert it between mp3 decoder and i2s writer");
@@ -609,7 +634,7 @@ void app_main(void)
     periph_service_set_callback(input_ser, input_key_service_cb, (void *)board_handle);
     */
     pipeline_for_play = setup_play_pipeline("/sdcard/track_0.wav");
-    pipeline_for_record = setup_record_pipeline("/sdcard/track_0.wav", 48000 /*sampling rate HZ*/, 2/*channels*/);
+    pipeline_for_record = setup_record_pipeline("/sdcard/track_0.wav", CONFIG_BITRATE_SAMPLING /*sampling rate HZ*/, 2/*channels*/);
 
     ESP_LOGI(TAG, "[ 4 ] Set up event listener");
     audio_event_iface_cfg_t evt_cfg = AUDIO_EVENT_IFACE_DEFAULT_CFG();

@@ -26,6 +26,12 @@ config INPUT_LINE
 	bool "Record input source is LINE-IN"
 endchoice
 
+config BITRATE_SAMPLING
+	int "Sampling bitrate <24000 | 48000>"
+		default 4
+		help
+			The bitrate sampling for recording and playing.
+
 config FONT_COMIC_NEUE_25x28
 	bool "Use font COMIC_NEUE_25x28"
 	default y

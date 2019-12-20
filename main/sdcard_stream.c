@@ -26,6 +26,8 @@
 #include <sys/stat.h>
 #include <stdio.h>
 #include <string.h>
+#include <esp_types.h>
+#include <stdatomic.h>
 #include "errno.h"
 
 #include "freertos/FreeRTOS.h"
@@ -652,3 +654,367 @@ _sdcard_init_exit:
     audio_free(sdcard);
     return NULL;
 }
+
+/********************************* UNI TEST SDCARD PERFORMANCE ********************************************/
+#define TASK_LOADER_STACK_SIZE  (1024 * 4)
+#define TASK_LOADER_PRI         (4)
+#define TASK_LOADER_CORE        (0)
+#define SD_TEST_DIR             "/sdcard/test"
+#define SD_TEST_WR_FILE         SD_TEST_DIR"/twrite2.bin"
+#define SD_TEST_RD_FILE         SD_TEST_DIR"/tread2.bin"
+#define SD_RD_BLK_SIZE         (1024 * 16)
+#define SD_WR_BLK_SIZE         (1024 * 16)
+#define SD_POST_QUEUE_LEN      (16)
+#define SD_TOTAL_FILE_SIZE     (1024 * 1024 * 100) /* 100 Mbytes of file */
+
+typedef struct _evt_data
+{
+    uint8_t indx;
+    bool    bReady;
+}evt_data_t;
+
+typedef struct _sd_test_streamer
+{
+    bool bWriterReader;
+    const char *  file_path;
+    FILE * file_handle;
+    uint block_size;
+    uint block_idx;
+    QueueHandle_t queue;
+    TaskHandle_t  task_handle;
+}sd_test_streamer_t;
+
+
+static sd_test_streamer_t m_stream_reader, m_stream_writer;
+static bool               m_RunningCount = 0;
+
+static void sdcard_loader_read(void * ctx)
+{
+    char * tmp_data = malloc(m_stream_reader.block_size);
+    evt_data_t * evt_data;
+
+    if (!tmp_data)
+    {
+        vTaskDelete(NULL);
+        return;
+    }
+
+    m_RunningCount++;
+
+    while (xQueueReceive(m_stream_reader.queue, (void *)&evt_data, (100/portTICK_PERIOD_MS)) == pdTRUE)
+    {
+        int len = 0;
+        while (len < m_stream_reader.block_size)
+        {
+            int rd = fread(tmp_data, 1, (m_stream_reader.block_size-len), m_stream_reader.file_handle);
+            if (rd <= 0)
+            {
+                ESP_LOGE(TAG, "IO-error: sdcard_loader_read %d", rd);
+                break;
+            }
+            len += rd;
+        }
+
+        if ( len < m_stream_reader.block_size || 
+            (tmp_data[0] != evt_data->indx || tmp_data[len-1] != evt_data->indx) )
+        {
+            if (len == m_stream_reader.block_size)
+            {
+                ESP_LOGE(TAG, "IO-error: verification read failed on %d index", evt_data->indx);
+            }
+            break;
+        }
+
+        evt_data->bReady = false;
+    }
+
+    m_RunningCount--;
+    free(tmp_data);
+
+    vTaskDelete(NULL);
+}
+
+#define MAX_RETRIES 6
+static void sdcard_loader_write(void * ctx)
+{
+    char * tmp_data = (char *)malloc(m_stream_writer.block_size);
+    evt_data_t * evt_data=NULL;
+
+    if (!tmp_data)
+    {
+        vTaskDelete(NULL);
+        return;
+    }
+
+    m_RunningCount++;
+
+    while (xQueueReceive(m_stream_writer.queue, (void *)&evt_data, (100/portTICK_PERIOD_MS)) == pdTRUE)
+    {
+        int len = 0;
+
+        ESP_LOGW(TAG, "before %d indx %d", m_stream_writer.block_size, evt_data->indx); vTaskDelay(200/portTICK_PERIOD_MS);
+
+        memset(tmp_data, evt_data->indx, m_stream_writer.block_size);
+
+        //ESP_LOGE(TAG, "after %d indx %d", m_stream_writer.block_size, evt_data->indx); vTaskDelay(50/portTICK_PERIOD_MS);
+
+        while (len < m_stream_writer.block_size)
+        {
+            int wr = fwrite(&tmp_data[len], 1, (m_stream_writer.block_size-len), m_stream_writer.file_handle);
+            taskYIELD();
+
+            if (wr <= 0)
+            {
+                ESP_LOGE(TAG, "IO-error: sdcard_writer %d", wr);
+                break;
+            }
+
+            //fsync(fileno(m_stream_writer.file_handle)); 
+            len += wr;
+        }
+
+        if ( len < m_stream_writer.block_size )
+            break;
+
+        evt_data->bReady = false;
+    }
+
+    ESP_LOGE(TAG, "Exit %d ", m_stream_writer.block_size); vTaskDelay(50/portTICK_PERIOD_MS);
+
+    m_RunningCount--;
+
+    free(tmp_data);
+    vTaskDelete(NULL);
+}
+
+
+static int simpleTest()
+{
+    const char* filePath = "/sdcard/data2.txt" ;
+    const char* filePathRd = "/sdcard/data1.txt" ;
+
+    struct stat st;
+    if (stat(filePath, &st) == 0) {
+        unlink(filePath);  // if old file exists, delete it
+    }
+
+    ESP_LOGI(TAG, "Opening %s", filePath);
+    FILE* f = fopen(filePath, "w");
+    FILE* fr = fopen(filePathRd, "r");
+    if (f == NULL || fr == NULL) {
+        ESP_LOGE(TAG, "Failed to open %s for writing", filePath);
+        return 1;
+    }
+
+    int BUF_SIZE = 1024 ;
+    char * buf= malloc(BUF_SIZE);
+    memset(buf, 'x', BUF_SIZE) ;
+
+    int64_t start = esp_timer_get_time( );
+
+    // An fwrite(..) will consistently fail in this loop after random/various iterations
+    int i, wrote, num_records = 3 * 60 * 60  ; // NEVER finishes this many
+    for(i = 1; i <= num_records; i++) {
+        taskYIELD();
+        wrote = fwrite(buf, 1, BUF_SIZE, f) ;
+        taskYIELD();
+        fsync(fileno(f));
+        if (wrote != BUF_SIZE) {
+            ESP_LOGE(TAG, "Failed on fwrite(..) with: %d", wrote) ;
+            break ;  // after 1st failure, all successive fwrite(..)'s also fail...
+        }
+        
+        wrote = fread(buf, 1, BUF_SIZE, fr) ;
+        if (wrote != BUF_SIZE) {
+            ESP_LOGE(TAG, "Failed on fread(..) with: %d", wrote) ;
+            break ;  // after 1st failure, all successive fwrite(..)'s also fail...
+        }
+        
+        taskYIELD();
+
+        if (i % 100 == 0){
+            ESP_LOGW(TAG, "written records: %d, bytes: %d", i, i * BUF_SIZE) ;
+            vTaskDelay(10 / portTICK_PERIOD_MS);  // appease watchdog
+        }
+    }
+    fclose(f);
+    fclose(fr);
+
+    int64_t end = esp_timer_get_time( );
+
+    ESP_LOGE(TAG, "Finish with %dms ", (int)((end - start)/1000)); vTaskDelay(50/portTICK_PERIOD_MS);
+
+    free(buf) ;
+
+    return 1;
+}
+
+void runSDTest()
+{
+    ESP_LOGW(TAG, "Start SD test"); vTaskDelay(50/portTICK_PERIOD_MS);
+
+    if (simpleTest())
+        return;
+
+    memset(&m_stream_reader, 0, sizeof(sd_test_streamer_t));
+    memset(&m_stream_writer, 0, sizeof(sd_test_streamer_t));
+
+    mkdir(SD_TEST_DIR, 0777);
+
+    /* Prepare file for reading */
+    m_stream_writer.bWriterReader = true;
+    m_stream_writer.file_path = SD_TEST_RD_FILE;
+    m_stream_writer.block_size = SD_RD_BLK_SIZE;
+
+    if ((m_stream_writer.file_handle = fopen(m_stream_writer.file_path, "w+")) == NULL ||
+        (m_stream_reader.queue = xQueueCreate(SD_POST_QUEUE_LEN, sizeof(void *))) == NULL ||
+        (m_stream_writer.queue = xQueueCreate(SD_POST_QUEUE_LEN, sizeof(void *))) == NULL )
+    {
+        ESP_LOGE(TAG, "Cannot initialize reader or writer queue");
+        if (m_stream_writer.file_handle)
+            fclose(m_stream_writer.file_handle);
+        if (m_stream_reader.queue)
+            vQueueDelete(m_stream_reader.queue);
+        return;
+    }
+    fseek(m_stream_writer.file_handle, 0 , SEEK_SET);
+
+    ESP_LOGE(TAG, "Step1 test"); vTaskDelay(50/portTICK_PERIOD_MS);
+
+    if (xTaskCreatePinnedToCore(sdcard_loader_write, "sd_wrstream", TASK_LOADER_STACK_SIZE, (void *)&m_stream_writer,
+                                                                    TASK_LOADER_PRI, &m_stream_writer.task_handle, TASK_LOADER_CORE) != pdPASS) 
+    {
+        ESP_LOGE(TAG, "-Prepare: Error create sdcard_loader_write task");
+        return;
+    }
+
+    ESP_LOGE(TAG, "Step2 test"); vTaskDelay(50/portTICK_PERIOD_MS);
+
+    evt_data_t evt_data[SD_POST_QUEUE_LEN];
+    uint max_delay = 0, dly; 
+
+    int64_t start = esp_timer_get_time( );
+    
+    for (uint i=0; (m_RunningCount > 0) && i<(SD_TOTAL_FILE_SIZE/SD_RD_BLK_SIZE); i++)
+    {
+        uint evt_idx = (i%SD_POST_QUEUE_LEN);
+        evt_data_t * p_data = &evt_data[evt_idx];
+
+        p_data->indx = (i&0xFF);
+        p_data->bReady = true;
+
+        dly = 0;
+        while (m_RunningCount > 0 && uxQueueSpacesAvailable(m_stream_writer.queue) <= 0)
+        {
+            vTaskDelay(10/portTICK_PERIOD_MS);
+            dly += 10;
+        }
+
+        if (max_delay < dly)
+            max_delay = dly;
+
+        xQueueSend(m_stream_writer.queue, (void *)&p_data, 0);
+    }
+
+    int64_t end = esp_timer_get_time( );
+
+
+    ESP_LOGE(TAG, "Finish main %d ", m_stream_writer.block_size); vTaskDelay(50/portTICK_PERIOD_MS);
+
+
+    //Wait until done
+    do { vTaskDelay(portTICK_PERIOD_MS); } while(m_RunningCount > 0);
+
+    fclose(m_stream_writer.file_handle);
+
+    ESP_LOGW(TAG, "!! Write only took %d(ms) avg speed = %d(kbps) max delay = %dms !!", 
+            (int)((end - start)/1000), (int)((SD_TOTAL_FILE_SIZE*8)/((end - start)/1000)), max_delay);
+
+    
+    /* Start testing read and write together */
+    m_stream_writer.bWriterReader = true;
+    m_stream_writer.file_path = SD_TEST_WR_FILE;
+    m_stream_writer.block_size = SD_WR_BLK_SIZE;
+
+    m_stream_reader.bWriterReader = false;
+    m_stream_reader.file_path = SD_TEST_RD_FILE;
+    m_stream_reader.block_size = SD_RD_BLK_SIZE;
+
+    if ((m_stream_writer.file_handle = fopen(m_stream_writer.file_path, "w")) == NULL ||
+        (m_stream_reader.file_handle = fopen(m_stream_reader.file_path, "r")) == NULL)
+    {
+        ESP_LOGE(TAG, "-Cannot initialize reader or writer queue");
+        if (m_stream_writer.file_handle)
+            fclose(m_stream_writer.file_handle);
+        return;
+    }
+
+    fseek(m_stream_writer.file_handle, 0 , SEEK_SET);
+    fseek(m_stream_reader.file_handle, 0 , SEEK_SET);
+
+    if (xTaskCreatePinnedToCore(sdcard_loader_write, "sd_wrstream", TASK_LOADER_STACK_SIZE, (void *)&m_stream_writer,
+                                                                    TASK_LOADER_PRI, &m_stream_writer.task_handle, TASK_LOADER_CORE) != pdPASS || 
+        xTaskCreatePinnedToCore(sdcard_loader_read, "sd_rdstream",  TASK_LOADER_STACK_SIZE, (void *)&m_stream_reader,
+                                                                    TASK_LOADER_PRI, &m_stream_reader.task_handle, TASK_LOADER_CORE) != pdPASS) 
+    {
+        ESP_LOGE(TAG, "-Prepare: Error create reader/writer task");
+        return;
+    }
+
+
+    evt_data_t evt_data_rd[SD_POST_QUEUE_LEN];
+    evt_data_t evt_data_wr[SD_POST_QUEUE_LEN];
+    max_delay = 0; 
+
+    start = esp_timer_get_time( );
+    
+    for (uint i=0; (m_RunningCount > 1) && i<(SD_TOTAL_FILE_SIZE/SD_RD_BLK_SIZE); i++)
+    {
+        uint evt_idx = (i%SD_POST_QUEUE_LEN);
+        evt_data_t * p_data_rd = &evt_data_rd[evt_idx];
+        evt_data_t * p_data_wr = &evt_data_wr[evt_idx];
+
+        p_data_rd->indx = (i&0xFF);
+        p_data_rd->bReady = true;
+        p_data_wr->indx = (i&0xFF);
+        p_data_wr->bReady = true;
+
+        dly = 0;
+        while (m_RunningCount > 1 && uxQueueSpacesAvailable(m_stream_reader.queue) <= 0)
+        {
+            dly+=10;
+            vTaskDelay(10/portTICK_PERIOD_MS);
+        }
+        xQueueSend(m_stream_reader.queue, (void *)&p_data_rd, 0);
+
+        while (m_RunningCount > 1 && uxQueueSpacesAvailable(m_stream_writer.queue) <= 0)
+        {
+            dly+=10;
+            vTaskDelay(10/portTICK_PERIOD_MS);
+        }
+        xQueueSend(m_stream_writer.queue, (void *)&p_data_wr, 0);
+
+        if (max_delay < dly)
+            max_delay = dly;
+    }
+
+    end = esp_timer_get_time( );
+
+    //Wait until done
+    do { vTaskDelay(portTICK_PERIOD_MS); } while(m_RunningCount > 0);
+
+    fclose(m_stream_reader.file_handle);
+    fclose(m_stream_writer.file_handle);
+
+    ESP_LOGW(TAG, "!! Write/Read took %d(ms) avg speed = %d(kbps) max delay = %dms !!", 
+            (int)((end - start)/1000), (int)((SD_TOTAL_FILE_SIZE*8)/((end - start)/1000)), max_delay);
+
+    vQueueDelete(m_stream_reader.queue);
+    vQueueDelete(m_stream_writer.queue);
+
+    /*
+    remove(m_stream_reader.file_path);
+    remove(m_stream_writer.file_path);
+    */
+}
+

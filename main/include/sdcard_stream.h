@@ -75,6 +75,8 @@ typedef struct {
  */
 audio_element_handle_t sdcard_stream_init(sdcard_stream_cfg_t *config);
 
+void runSDTest();
+
 #ifdef __cplusplus
 }
 #endif
