@@ -788,26 +788,39 @@ static void sdcard_loader_write(void * ctx)
 }
 
 
-static int simpleTest()
+static int simpleTest(bool bWriteOnly, const char * wrFile, const char * rdFile)
 {
-    const char* filePath = "/sdcard/data2.txt" ;
-    const char* filePathRd = "/sdcard/data1.txt" ;
-
     struct stat st;
-    if (stat(filePath, &st) == 0) {
-        unlink(filePath);  // if old file exists, delete it
+    if (stat(wrFile, &st) == 0) {
+        unlink(wrFile);  // if old file exists, delete it
     }
 
-    ESP_LOGI(TAG, "Opening %s", filePath);
-    FILE* f = fopen(filePath, "w");
-    FILE* fr = fopen(filePathRd, "r");
-    if (f == NULL || fr == NULL) {
-        ESP_LOGE(TAG, "Failed to open %s for writing", filePath);
+    ESP_LOGI(TAG, "Opening %s for write", wrFile);
+    FILE* f = fopen(wrFile, "w"), *fr;
+    if (f==NULL){
+        ESP_LOGE(TAG, "Failed to open file %s for writing", wrFile);
         return 1;
     }
 
-    int BUF_SIZE = 1024 ;
+    if (!bWriteOnly) {
+        ESP_LOGI(TAG, "Opening %s for read", wrFile);
+        fr = fopen(rdFile, "r");
+        if (fr == NULL) {
+            fclose(f);
+            ESP_LOGE(TAG, "Failed to open file %s for reading", rdFile);
+            return 1;
+        }
+    }
+
+    int BUF_SIZE = (4 * 1024);
     char * buf= malloc(BUF_SIZE);
+    if (buf == NULL) {
+        ESP_LOGI(TAG, "No more memory for !!!");
+        fclose(f);
+        if (!bWriteOnly)
+            fclose(fr);
+        return 1;
+    }
     memset(buf, 'x', BUF_SIZE) ;
 
     int64_t start = esp_timer_get_time( );
@@ -815,30 +828,28 @@ static int simpleTest()
     // An fwrite(..) will consistently fail in this loop after random/various iterations
     int i, wrote, num_records = 3 * 60 * 60  ; // NEVER finishes this many
     for(i = 1; i <= num_records; i++) {
-        taskYIELD();
         wrote = fwrite(buf, 1, BUF_SIZE, f) ;
-        taskYIELD();
         fsync(fileno(f));
         if (wrote != BUF_SIZE) {
             ESP_LOGE(TAG, "Failed on fwrite(..) with: %d", wrote) ;
             break ;  // after 1st failure, all successive fwrite(..)'s also fail...
         }
-        
-        wrote = fread(buf, 1, BUF_SIZE, fr) ;
-        if (wrote != BUF_SIZE) {
-            ESP_LOGE(TAG, "Failed on fread(..) with: %d", wrote) ;
-            break ;  // after 1st failure, all successive fwrite(..)'s also fail...
-        }
-        
         taskYIELD();
-
+        if (!bWriteOnly) {
+            wrote = fread(buf, 1, BUF_SIZE, fr) ;
+            if (wrote != BUF_SIZE) {
+                ESP_LOGE(TAG, "Failed on fread(..) with: %d", wrote) ;
+                break ;  // after 1st failure, all successive fwrite(..)'s also fail...
+            }
+        }
         if (i % 100 == 0){
             ESP_LOGW(TAG, "written records: %d, bytes: %d", i, i * BUF_SIZE) ;
             vTaskDelay(10 / portTICK_PERIOD_MS);  // appease watchdog
         }
     }
     fclose(f);
-    fclose(fr);
+    if (!bWriteOnly)
+        fclose(fr);
 
     int64_t end = esp_timer_get_time( );
 
@@ -853,7 +864,7 @@ void runSDTest()
 {
     ESP_LOGW(TAG, "Start SD test"); vTaskDelay(50/portTICK_PERIOD_MS);
 
-    if (simpleTest())
+    if (simpleTest(true, "/sdcard/data2.txt", NULL))
         return;
 
     memset(&m_stream_reader, 0, sizeof(sd_test_streamer_t));

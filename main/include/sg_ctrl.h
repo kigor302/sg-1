@@ -17,6 +17,8 @@
 #define MAX_SONGS			  (9)
 #define MAX_TRACKS			  (5)
 #define MAX_EQ_BANDS		  (6)
+#define MAX_VOL_BANDS		  (6)
+#define MAX_REC_OPTONS		  (3)
 
 typedef enum { BT_LEFT=0, BT_RIGTH, BT_UP, BT_DOWN, BT_SET, BT_PLAY, BT_REC, BT_STOP, BT_FORWARD, 
 	           BT_REWARD, EN_VOLUME_UP, EN_VOLUME_DOWN, BT_VOLUME_SW, OUT_LED_GREEN, OUT_LED_RED, OUT_OLED }CTRL_BUTTON_E;
@@ -44,15 +46,15 @@ typedef struct _song
 typedef struct _record_opt
 {
 	REC_SOURCE_E  rec_source;
-	bool          bmonitor;
-	int           cursor; /* 0 - source selection, 1 - Monitor selection */
+	bool          bmonitor; /* record to outpt passtrough */
+	bool          brecordmix; /* mix play and record together */
+	int           cursor; /* 0 - source selection, 1 - Monitor selection, 2 - Record mixer*/
 }record_opt_t;
 
 typedef struct _volume
 {
-	int play_volume;
-	int rec_volume;
-	bool play_vol_selected;
+	int bands[MAX_VOL_BANDS];
+	int cursor; /* 0 - play vloume, 1 - record volume, 2 - line-in, 3 - microphone, 4 - headset volume, 5 - speaker volume */
 	uint last_time_selected;
 }volume_t;
 

@@ -252,6 +252,48 @@ void set_led(CTRL_BUTTON_E led, bool bOn)
 /******************************* Display *************************/
 static void show_display_volume(player_state_t * state)
 {
+	static const char * bands_msg[MAX_VOL_BANDS] = { "dac", "adc", "lin", "mic", "hp", "spk" };
+
+	/* Clear screen */
+	SSD1306_Clear(&m_Dev_I2C, false);
+
+	SSD1306_SetFont(&m_Dev_I2C, &Font_Ubuntu_Mono_6x10);
+
+	int x = 11, ytop=11, ybottom=m_Dev_I2C.Height-14;
+	int step = (m_Dev_I2C.Width-x*2)/(MAX_VOL_BANDS-1);
+
+	/* drow text line */
+	FontDrawAnchoredString(&m_Dev_I2C, "Volume control", TextAnchor_North, true);
+
+	for (int i=0; i<MAX_VOL_BANDS; i++, x+=step)
+	{
+		/* Draw vertical bar */
+		SSD1306_DrawVLine(&m_Dev_I2C, x, ytop, ybottom, true);
+		
+		int h = ((ybottom-ytop)*(state->volume.bands[i]))/100;
+		SSD1306_DrawVLine(&m_Dev_I2C, x-1, ybottom-h, ybottom, true);
+		SSD1306_DrawVLine(&m_Dev_I2C, x+1, ybottom-h, ybottom, true);
+
+		SSD1306_DrawHLine(&m_Dev_I2C, x-5, ybottom-h+0, x+5, true);
+		SSD1306_DrawHLine(&m_Dev_I2C, x-5, ybottom-h+1, x+5, true);
+
+		if (state->volume.cursor == i)
+		{
+			SSD1306_DrawEmptyRect(&m_Dev_I2C, x-8, ytop-2, x+8, ybottom+1, true);
+		}
+
+		int xstart = (x - FontMeasureString(&Font_Ubuntu_Mono_6x10, bands_msg[i])/2);
+		if (xstart < 0)
+			xstart = 0;
+		FontDrawStringUnaligned(&m_Dev_I2C, bands_msg[i], xstart, ybottom+3, true);
+	}
+
+	SSD1306_Update(&m_Dev_I2C);
+
+	/* Return back right font selection */
+	SSD1306_SetFont(&m_Dev_I2C, &Font_Liberation_Serif_19x19);
+
+#if 0
 	char txtMsg[16];
 	int  vol = (state->volume.play_vol_selected? state->volume.play_volume: state->volume.rec_volume);
 	sprintf(txtMsg, "%s vol (%d)", (state->volume.play_vol_selected?"Play":"Rec"), vol);
@@ -272,6 +314,7 @@ static void show_display_volume(player_state_t * state)
 	SSD1306_DrawVLine(&m_Dev_I2C, 10+vol+1, 40-4, 42+4, true);
 
 	SSD1306_Update(&m_Dev_I2C);
+#endif
 }
 
 static uint8_t fonts_12x8[5][18] = {
@@ -387,23 +430,30 @@ static void show_display_equlizer(player_state_t * state)
 
 void show_display_recoptions(player_state_t * state)
 {
-	char msg_s[32], msg_m[32];
+	char msg[MAX_REC_OPTONS][32];
 	/* Clear screen */
 	SSD1306_Clear(&m_Dev_I2C, false);
 
+	SSD1306_SetFont(&m_Dev_I2C, &Font_Ubuntu_Mono_6x10);
+
 	/* drow text line */
-	FontDrawAnchoredString(&m_Dev_I2C, "Rec options", TextAnchor_North, true);
+	FontDrawAnchoredString(&m_Dev_I2C, "Record options", TextAnchor_North, true);
 
-	sprintf(msg_s, "Source: %s", (state->rec_opt.rec_source == SRC_LINEIN)? "line-in": "mic");
-	FontDrawStringUnaligned(&m_Dev_I2C, msg_s, 1, 20, true);
-	sprintf(msg_m, "Monitor: %s", (state->rec_opt.bmonitor)? "on": "off");
-	FontDrawStringUnaligned(&m_Dev_I2C, msg_m, 1, 40, true);
+	sprintf(msg[0], "Source: %s", (state->rec_opt.rec_source == SRC_LINEIN)? "line-in": "mic");
+	FontDrawStringUnaligned(&m_Dev_I2C, msg[0], 1, 12, true);
+	sprintf(msg[1], "Monitor: %s", (state->rec_opt.bmonitor)? "on": "off");
+	FontDrawStringUnaligned(&m_Dev_I2C, msg[1], 1, 24, true);
+	sprintf(msg[2], "Record mix: %s", (state->rec_opt.brecordmix)? "yes": "no");
+	FontDrawStringUnaligned(&m_Dev_I2C, msg[2], 1, 36, true);
 
-	int y = (state->rec_opt.cursor==0)? 20: 40;
-	int x = FontMeasureString(&Font_Liberation_Serif_19x19, ((state->rec_opt.cursor==0)?msg_s:msg_m));
-	SSD1306_DrawEmptyRect(&m_Dev_I2C, 0, y, x+1, y+19, true);
+	int y = 11 + (state->rec_opt.cursor * 12);
+	int x = FontMeasureString(&Font_Ubuntu_Mono_6x10, msg[(state->rec_opt.cursor%3)]);
+	SSD1306_DrawEmptyRect(&m_Dev_I2C, 0, y-1, x+1, y+11, true);
 
 	SSD1306_Update(&m_Dev_I2C);
+
+	/* Return back right font selection */
+	SSD1306_SetFont(&m_Dev_I2C, &Font_Liberation_Serif_19x19);
 }
 
 
