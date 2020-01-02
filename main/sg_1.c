@@ -39,8 +39,10 @@
 #include "input_key_service.h"
 #include "periph_adc_button.h"
 #include "board.h"
+#include "equalizer.h"
 #include "sg1.h"
 #include "sg_ctrl.h"
+
 
 static const char *TAG = "SG-1";
 
@@ -49,20 +51,39 @@ static const char *TAG = "SG-1";
 /* Local variabbles */
 static audio_board_handle_t board_handle;
 static audio_pipeline_handle_t pipeline_for_record, pipeline_for_play;
-static audio_element_handle_t  fatfs_stream_reader, i2s_stream_writer, /*mp3_decoder,*/ wav_decoder, resample_for_play;
+static audio_element_handle_t  fatfs_stream_reader, i2s_stream_writer, /*mp3_decoder,*/ wav_decoder, resample_for_play, equalizer;
 static audio_element_handle_t  fatfs_stream_writer, i2s_stream_reader, wav_encoder, /*raw_reader,*/ resample_for_rec;
 static song_t m_songs[MAX_SONGS] = {0};
 static player_state_t m_state = { .song=&m_songs[0], .play_selected_tracks=0x0, .rec_selected_track=1,
                                   .cursor=0, .play_state=P_STOPED, .rec_state=R_STOPED, 
                                   .rec_opt={SRC_LINEIN, false, false, 0},
-                                  .equalizer={{0,0,0,0,0,0}},
+                                  .equalizer={{0,0,0,0,0,0,0,0,0,0}},
                                   .volume={{50, 50, 50, 50, 50, 50}, 0},
                                   .display=D_SONG };
 
 static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
 {
-    if (evt == EVT_RELEASED)
+    if (evt == EVT_RELEASED || (evt == EVT_LONGPRESS && bt != BT_SET))
         return;
+
+    if (evt == EVT_LONGPRESS)
+    {
+        if (m_state.display == D_SONG)
+        {
+            if (bt == BT_SET)
+            {
+                int track_num = 1 + ((m_state.song->cursor >= MAX_TRACKS)? m_state.song->cursor-MAX_TRACKS: m_state.song->cursor);
+                char track_name[32];
+                sprintf(track_name, "/sdcard/song_%d/track_%d.wav", m_state.song->num+1, track_num);
+                ESP_LOGI(TAG, "[ * ] Removing track %s", track_name);
+                remove(track_name);
+                m_state.song->tracks[track_num-1].len_in_sec = 0;
+            }
+        }
+
+        display_player_state(&m_state);
+        return;
+    }
 
     switch (bt)
     {
@@ -106,9 +127,12 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
                     m_state.rec_selected_track = (m_state.rec_selected_track != (m_state.song->cursor-MAX_TRACKS+1))? 
                                                   (m_state.song->cursor-MAX_TRACKS+1): 0;
                 else 
-                    m_state.play_selected_tracks = (m_state.play_selected_tracks & (1<<m_state.song->cursor))? 
-                                           (m_state.play_selected_tracks & ~(1<<m_state.song->cursor)):
-                                           (m_state.play_selected_tracks | (1<<m_state.song->cursor));
+                    m_state.play_selected_tracks = (m_state.play_selected_tracks & (1<<m_state.song->cursor))? 0:
+                                                   (1<<m_state.song->cursor); //Right now only one track is selected
+
+                    //m_state.play_selected_tracks = (m_state.play_selected_tracks & (1<<m_state.song->cursor))? 
+                    //                       (m_state.play_selected_tracks & ~(1<<m_state.song->cursor)):
+                    //                       (m_state.play_selected_tracks | (1<<m_state.song->cursor));
             }
             else if (m_state.display == D_VOLUME)
             {
@@ -347,15 +371,26 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
 
             if (m_state.display == D_VOLUME)
             {
-                m_state.volume.bands[m_state.volume.cursor] = (uint)((m_state.volume.bands[m_state.volume.cursor]+((bt==EN_VOLUME_UP)?5:-5)) % 100);
+                m_state.volume.bands[m_state.volume.cursor] = (uint)(m_state.volume.bands[m_state.volume.cursor]+((bt==EN_VOLUME_UP)?5:-5));
+                if (m_state.volume.bands[m_state.volume.cursor] > 100)
+                    m_state.volume.bands[m_state.volume.cursor] = 100;
+                if (m_state.volume.bands[m_state.volume.cursor] < 0)
+                    m_state.volume.bands[m_state.volume.cursor] = 0;
+
                 audio_hal_set_volume_ex(board_handle->audio_hal, m_state.volume.bands[m_state.volume.cursor], 
                                     (audio_hal_volume_src_t)m_state.volume.cursor, AUDIO_HAL_VOL_CHANNEL_BOTH);
             }
             else if (m_state.display == D_EQUALIZER)
             {
                 m_state.equalizer.bands[m_state.equalizer.cursor] = 
-                                           ((m_state.equalizer.bands[m_state.equalizer.cursor]+((bt==EN_VOLUME_UP)?2:-2)+20) % 40) - 20;
+                                           (m_state.equalizer.bands[m_state.equalizer.cursor]+((bt==EN_VOLUME_UP)?2:-2)+25) - 25;
+                if (m_state.equalizer.bands[m_state.equalizer.cursor] > 25)
+                    m_state.equalizer.bands[m_state.equalizer.cursor] = 25;
+                if (m_state.equalizer.bands[m_state.equalizer.cursor] < -25)
+                    m_state.equalizer.bands[m_state.equalizer.cursor] = -25;
+
                 //TODO:  Set equalizer in range -20db..20db
+                equalizer_set_gain_info(equalizer, m_state.equalizer.cursor, m_state.equalizer.bands[m_state.equalizer.cursor], true);
             }
             break; 
         default:
@@ -471,6 +506,23 @@ static audio_element_handle_t setup_wav_codec(bool bPlayer)
     return wav_coder;
 }
 
+static audio_element_handle_t setup_equalizer_filter()
+{
+    audio_element_info_t info;
+    equalizer_cfg_t eq_cfg = DEFAULT_EQUALIZER_CONFIG();
+    static int set_gain[] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+    eq_cfg.set_gain   = set_gain; // The size of gain array should be the multiplication of NUMBER_BAND and number channels of audio stream data. The minimum of gain is -13 dB.
+    eq_cfg.samplerate = CONFIG_BITRATE_SAMPLING;
+    eq_cfg.channel    = 2;
+    audio_element_handle_t eq = equalizer_init(&eq_cfg);
+    audio_element_getinfo(eq, &info);
+    info.sample_rates = CONFIG_BITRATE_SAMPLING;
+    audio_element_setinfo(eq, &info);
+
+    return eq;
+}
+
+
 static audio_element_handle_t setup_resample_filter()
 {
     audio_element_info_t info;
@@ -523,9 +575,10 @@ static struct audio_pipeline * setup_play_pipeline(const char * url)
     audio_pipeline_register(pipeline, (i2s_stream_writer = setup_i2s(true)),           "i2s");
     audio_pipeline_register(pipeline, (wav_decoder = setup_wav_codec(true)),           "wav");
     audio_pipeline_register(pipeline, (resample_for_play = setup_resample_filter()),   "filter");
+    audio_pipeline_register(pipeline, (equalizer = setup_equalizer_filter()),          "equlizer");
     audio_pipeline_register(pipeline, (fatfs_stream_reader = setup_fatfs(true, url)),  "file");
 
-    audio_pipeline_link(pipeline, (const char *[]) {"file", "wav", "filter", "i2s"}, 4);
+    audio_pipeline_link(pipeline, (const char *[]) {"file", "wav", "filter", "equlizer", "i2s"}, 5);
     /*
     ESP_LOGI(TAG, "- Create a ringbuffer and insert it between mp3 decoder and i2s writer");
     ringbuf_handle_t ringbuf = rb_create(16 * 1024, 1);

@@ -40,6 +40,8 @@ static const uint8_t pca9555_io_mapping[16] = { BT_VOLUME_SW,  EN_VOLUME_UP, EN_
 										 	    /*pin0*/        /*pin1(A)*/   /*pin2(B)*/      /*pin3*/  /*pin4*/ /*pin5*/ /*pin6*/   /*pin7*/
                                                 BT_UP,    BT_DOWN,  BT_LEFT,  BT_RIGTH,  BT_SET,   OUT_LED_GREEN, OUT_LED_RED, OUT_OLED };
                                                 /*pin8*/  /*pin9*/ /*pin10*/  /*Pin11*/ /*pin12*/  /*pin13*/      /*pin14*/    /*pin16*/
+static uint32_t pca9555_io_pressed_time = 0;
+static int pca9555_io_pressed_key = -1;
 
 
 static const uint16_t pca9555_input_mask = 0x1FFF;
@@ -71,10 +73,26 @@ static void pca9555_change_proc(uint16_t value)
 			{
 				if (!!(value & (1<<i)) != !!(value & (1<<((i&1)?(i+1):(i-1)))))
 					m_evt_callback_func(pca9555_io_mapping[i], EVT_STEP);
+				pca9555_io_pressed_key = -1;
 			}
 			else
+			{
+				bool bRelease = (value & (1<<i));
+				EVT_BUTTON_E evt = EVT_PRESSED;
+				if (bRelease)
+				{
+					evt = (pca9555_io_pressed_key == i && ((xTaskGetTickCount() - pca9555_io_pressed_time)*portTICK_PERIOD_MS) > 1000)? 
+						  EVT_LONGPRESS : EVT_RELEASED;
+					pca9555_io_pressed_key = -1;
+				}
+				else
+				{
+					pca9555_io_pressed_key = i;
+					pca9555_io_pressed_time = xTaskGetTickCount();
+				}
 				/* TODO: add read procedure and add the call to calback to the main app */
-				m_evt_callback_func(pca9555_io_mapping[i], ((value & (1<<i))?EVT_RELEASED:EVT_PRESSED));
+				m_evt_callback_func(pca9555_io_mapping[i], evt);
+			}
 		}
 	}
 
@@ -293,28 +311,6 @@ static void show_display_volume(player_state_t * state)
 	/* Return back right font selection */
 	SSD1306_SetFont(&m_Dev_I2C, &Font_Liberation_Serif_19x19);
 
-#if 0
-	char txtMsg[16];
-	int  vol = (state->volume.play_vol_selected? state->volume.play_volume: state->volume.rec_volume);
-	sprintf(txtMsg, "%s vol (%d)", (state->volume.play_vol_selected?"Play":"Rec"), vol);
-
-	/* Clear screen */
-	SSD1306_Clear(&m_Dev_I2C, false);
-	
-	/* drow text line */
-	FontDrawAnchoredString(&m_Dev_I2C, txtMsg, TextAnchor_North, true);
-
-	/* Draw horizontal line */
-	SSD1306_DrawHLine(&m_Dev_I2C, 10, 41, 110, true);
-	SSD1306_DrawHLine(&m_Dev_I2C, 10, 40, 10+vol, true);
-	SSD1306_DrawHLine(&m_Dev_I2C, 10, 42, 10+vol, true);
-
-	/* Draw vertical bar */
-	SSD1306_DrawVLine(&m_Dev_I2C, 10+vol,   40-4, 42+4, true);
-	SSD1306_DrawVLine(&m_Dev_I2C, 10+vol+1, 40-4, 42+4, true);
-
-	SSD1306_Update(&m_Dev_I2C);
-#endif
 }
 
 static uint8_t fonts_12x8[5][18] = {
@@ -386,7 +382,8 @@ static void show_display_song(player_state_t * state)
 
 static void show_display_equlizer(player_state_t * state)
 {
-	static const char * bands_msg[MAX_EQ_BANDS] = { "60", /*"170",*/ "310", /*"600",*/ "1k", "3k", /*"6k",*/ "12k", /*"14k",*/ "16k" };
+	static const char * bands_msg[MAX_EQ_BANDS] = { "31", "62", "125", "250", "500", "1k", "2k", "4k", "8k", "16k" };
+	int page_offset = (state->equalizer.cursor >= (MAX_EQ_BANDS/2))? MAX_EQ_BANDS/2 : 0;
 
 	/* Clear screen */
 	SSD1306_Clear(&m_Dev_I2C, false);
@@ -394,32 +391,32 @@ static void show_display_equlizer(player_state_t * state)
 	SSD1306_SetFont(&m_Dev_I2C, &Font_Ubuntu_Mono_6x10);
 
 	int x = 11, ytop=11, ybottom=m_Dev_I2C.Height-14;
-	int step = (m_Dev_I2C.Width-x*2)/(MAX_EQ_BANDS-1);
+	int step = (m_Dev_I2C.Width-x*2)/(MAX_EQ_BANDS/2-1);
 
 	/* drow text line */
 	FontDrawAnchoredString(&m_Dev_I2C, "Equalizer", TextAnchor_North, true);
 
-	for (int i=0; i<MAX_EQ_BANDS; i++, x+=step)
+	for (int i=0; i<MAX_EQ_BANDS/2; i++, x+=step)
 	{
 		/* Draw vertical bar */
 		SSD1306_DrawVLine(&m_Dev_I2C, x, ytop, ybottom, true);
 		
-		int h = ((ybottom-ytop)*(state->equalizer.bands[i]+50))/100;
+		int h = ((ybottom-ytop)*(state->equalizer.bands[i+page_offset]+25))/50;
 		SSD1306_DrawVLine(&m_Dev_I2C, x-1, ybottom-h, ybottom, true);
 		SSD1306_DrawVLine(&m_Dev_I2C, x+1, ybottom-h, ybottom, true);
 
 		SSD1306_DrawHLine(&m_Dev_I2C, x-5, ybottom-h+0, x+5, true);
 		SSD1306_DrawHLine(&m_Dev_I2C, x-5, ybottom-h+1, x+5, true);
 
-		if (state->equalizer.cursor == i)
+		if (state->equalizer.cursor == (i+page_offset))
 		{
 			SSD1306_DrawEmptyRect(&m_Dev_I2C, x-8, ytop-2, x+8, ybottom+1, true);
 		}
 
-		int xstart = (x - FontMeasureString(&Font_Ubuntu_Mono_6x10, bands_msg[i])/2);
+		int xstart = (x - FontMeasureString(&Font_Ubuntu_Mono_6x10, bands_msg[i+page_offset])/2);
 		if (xstart < 0)
 			xstart = 0;
-		FontDrawStringUnaligned(&m_Dev_I2C, bands_msg[i], xstart, ybottom+3, true);
+		FontDrawStringUnaligned(&m_Dev_I2C, bands_msg[i+page_offset], xstart, ybottom+3, true);
 	}
 
 	SSD1306_Update(&m_Dev_I2C);
