@@ -54,12 +54,30 @@ static audio_pipeline_handle_t pipeline_for_record, pipeline_for_play;
 static audio_element_handle_t  fatfs_stream_reader, i2s_stream_writer, /*mp3_decoder,*/ wav_decoder, resample_for_play, equalizer;
 static audio_element_handle_t  fatfs_stream_writer, i2s_stream_reader, wav_encoder, /*raw_reader,*/ resample_for_rec;
 static song_t m_songs[MAX_SONGS] = {0};
-static player_state_t m_state = { .song=&m_songs[0], .play_selected_tracks=0x0, .rec_selected_track=1,
+static player_state_t m_state = { .version = PLAYER_CONFIG_VERSION,
+                                  .song=&m_songs[0], .play_selected_tracks=0x0, .rec_selected_track=1,
                                   .cursor=0, .play_state=P_STOPED, .rec_state=R_STOPED, 
                                   .rec_opt={SRC_LINEIN, false, false, 0},
                                   .equalizer={{0,0,0,0,0,0,0,0,0,0}},
                                   .volume={{50, 50, 50, 50, 50, 50}, 0},
                                   .display=D_SONG };
+
+static bool saveload_config(bool bsave)
+{
+    char config_file_name[] = { '/','s','d','c','a','r','d','/','c','f','g','_',m_state.version,'.','b','i','n','\0' };
+    FILE * f = fopen(config_file_name,(bsave)?"wb":"rb");
+    bool bresult = false;
+
+    if (f != NULL)
+    {
+        if (bsave)
+            bresult = (sizeof(player_state_t) == fwrite(&m_state,1,sizeof(player_state_t),f));
+        else
+            bresult = (sizeof(player_state_t) == fread(&m_state,1,sizeof(player_state_t),f));
+        fclose(f);
+    }
+    return (bresult);
+}
 
 static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
 {
@@ -162,11 +180,15 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
                     audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_PASSTHROUGH, 
                                         (m_state.rec_opt.bmonitor? AUDIO_HAL_CTRL_START: AUDIO_HAL_CTRL_STOP));
                 }
-                else
+                else if (m_state.rec_opt.cursor == 2)
                 {
                     m_state.rec_opt.brecordmix = !m_state.rec_opt.brecordmix;
                     audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_RECORD_MIX, 
                                         (m_state.rec_opt.brecordmix? AUDIO_HAL_CTRL_START: AUDIO_HAL_CTRL_STOP));
+                }
+                else if (m_state.rec_opt.cursor == 3)
+                {
+                    saveload_config(true);
                 }
             }
 
@@ -203,16 +225,16 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
 
             switch (el_state) {
                 case AEL_STATE_RUNNING :
-                    ESP_LOGI(TAG, "[ * ] Pausing play audio pipeline");
-                    audio_pipeline_pause(pipeline);
-                    m_state.play_state = P_PAUSE;
-                    set_led(OUT_LED_GREEN, false);
+                    ESP_LOGI(TAG, "[ * ] Pausing play audio pipeline (not ready yet)");
+                    //audio_pipeline_pause(pipeline);
+                    //m_state.play_state = P_PAUSE;
+                    //set_led(OUT_LED_GREEN, false);
                     break;
                 case AEL_STATE_PAUSED :
-                    ESP_LOGI(TAG, "[ * ] Resuming play audio pipeline");
-                    audio_pipeline_resume(pipeline);
-                    m_state.play_state = P_PLAYING;
-                    set_led(OUT_LED_GREEN, true);
+                    ESP_LOGI(TAG, "[ * ] Resuming play audio pipeline (not ready yet)");
+                    //audio_pipeline_resume(pipeline);
+                    //m_state.play_state = P_PLAYING;
+                    //set_led(OUT_LED_GREEN, true);
                     break;
                 case AEL_STATE_INIT :
                     ESP_LOGI(TAG, "[ * ] Starting play audio pipeline");
@@ -291,7 +313,7 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
             break;
 
         case BT_STOP:
-            if (AEL_STATE_FINISHED != audio_element_get_state(i2s_stream_writer/*i2s_stream_reader*/))
+            if (AEL_STATE_FINISHED != audio_element_get_state(i2s_stream_writer))
             {
                 audio_pipeline_stop(pipeline_for_play);
                 audio_pipeline_wait_for_stop(pipeline_for_play);
@@ -317,8 +339,6 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
             m_state.recording_track = m_state.playing_tracks = 0;
             set_led(OUT_LED_GREEN, false);
             set_led(OUT_LED_RED, false);
-
-            //runSDTest();
 
             break;
 
@@ -618,6 +638,8 @@ void app_main(void)
     ESP_LOGI(TAG, "[ 1.2 ] Initialize keys");
     audio_board_key_init(set);
 
+    ESP_LOGI(TAG, "[ - ] Try to load configuration from sd card");
+    saveload_config(false);
     //runSDTest();
 
 #ifdef USE_WIFI    
