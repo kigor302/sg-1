@@ -17,7 +17,7 @@
 #define MAX_SONGS			  (9)
 #define MAX_TRACKS			  (5)
 #define MAX_EQ_BANDS		  (10)
-#define MAX_VOL_BANDS		  (6)
+#define MAX_VOL_BANDS		  (8)
 #define MAX_REC_OPTONS		  (4)
 
 typedef enum { BT_LEFT=0, BT_RIGTH, BT_UP, BT_DOWN, BT_SET, BT_PLAY, BT_REC, BT_STOP, BT_FORWARD, 
@@ -64,7 +64,7 @@ typedef struct _equalizer
 	int cursor; /* 0 - first band selection */
 }equalizer_t;
 
-#define PLAYER_CONFIG_VERSION	'1'
+#define PLAYER_CONFIG_VERSION	'2'
 typedef struct _player_state
 {
 	char		version;

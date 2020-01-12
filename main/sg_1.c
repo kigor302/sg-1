@@ -59,7 +59,7 @@ static player_state_t m_state = { .version = PLAYER_CONFIG_VERSION,
                                   .cursor=0, .play_state=P_STOPED, .rec_state=R_STOPED, 
                                   .rec_opt={SRC_LINEIN, false, false, 0},
                                   .equalizer={{0,0,0,0,0,0,0,0,0,0}},
-                                  .volume={{50, 50, 50, 50, 50, 50}, 0},
+                                  .volume={{50, 50, 50, 50, 50, 50, 50}, 0},
                                   .display=D_SONG };
 
 static bool saveload_config(bool bsave)
@@ -76,6 +76,7 @@ static bool saveload_config(bool bsave)
             bresult = (sizeof(player_state_t) == fread(&m_state,1,sizeof(player_state_t),f));
         fclose(f);
     }
+    
     return (bresult);
 }
 
@@ -188,7 +189,8 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
                 }
                 else if (m_state.rec_opt.cursor == 3)
                 {
-                    saveload_config(true);
+                    bool bsaved = saveload_config(true);
+                    ESP_LOGI(TAG, "[ * ] Configuration save %s !!", (bsaved?"success":"failed"));
                 }
             }
 
@@ -653,7 +655,18 @@ void app_main(void)
     periph_wifi_wait_for_connected(wifi_handle, portMAX_DELAY);
 #endif
 
-    board_handle = audio_board_init();
+    if ( (board_handle = audio_board_init()) )
+    {
+        audio_hal_ctrl_codec(board_handle->audio_hal, 
+            ((m_state.rec_opt.rec_source == SRC_MIC)? AUDIO_HAL_CODEC_MODE_ENCODE:
+                                                      AUDIO_HAL_CODEC_MODE_LINE_IN),
+                            AUDIO_HAL_CTRL_START);
+        audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_PASSTHROUGH, 
+                            (m_state.rec_opt.bmonitor? AUDIO_HAL_CTRL_START: AUDIO_HAL_CTRL_STOP));
+
+        audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_RECORD_MIX, 
+                            (m_state.rec_opt.brecordmix? AUDIO_HAL_CTRL_START: AUDIO_HAL_CTRL_STOP));
+/*
 #ifdef CONFIG_INPUT_MIC
     audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_DECODE, AUDIO_HAL_CTRL_START);
     ESP_LOGI(TAG, "[ 2 ] Start codec chip (MIC)");
@@ -661,11 +674,14 @@ void app_main(void)
     audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_LINE_IN, AUDIO_HAL_CTRL_START);
     ESP_LOGI(TAG, "[ 2 ] Start codec chip (LINE-IN)");
 #endif
-    /* set all volumes */
-    for (int v=0; v<MAX_VOL_BANDS; v++)
-        audio_hal_set_volume_ex(board_handle->audio_hal, m_state.volume.bands[v], 
-                                (audio_hal_volume_src_t)v, AUDIO_HAL_VOL_CHANNEL_BOTH);
-     
+*/
+
+        /* set all volumes */
+        for (int v=0; v<MAX_VOL_BANDS; v++)
+            audio_hal_set_volume_ex(board_handle->audio_hal, m_state.volume.bands[v], 
+                                    (audio_hal_volume_src_t)v, AUDIO_HAL_VOL_CHANNEL_BOTH);
+    }
+
     pipeline_for_play = setup_play_pipeline(NULL);
     pipeline_for_record = setup_record_pipeline(NULL);
 
