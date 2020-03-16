@@ -34,6 +34,7 @@
 #include "iface_esp32_i2c.h"
 
 #define PCA9555_DEVICE_ADDRESS 0x20
+#define PCA9555_DEVICE2_ADDRESS 0x27
 
 /**
  *  Eight possible device addresses. The rightmost (least significant)

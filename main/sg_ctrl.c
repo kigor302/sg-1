@@ -25,9 +25,10 @@
 /* Local variables */
 static xQueueHandle m_gpio_evt_queue = NULL;
 static button_cb_t  m_evt_callback_func = NULL;
+static button2_cb_t  m_evt_callback2_func = NULL;
 static struct SSD1306_Device m_Dev_I2C;
-static i2c_dev_t m_pca9555_I2C;
-static uint16_t  m_last_pca9555_value;
+static i2c_dev_t m_pca9555_I2C, m_pca9555_I2C_2;
+static uint16_t  m_last_pca9555_value, m_last_pca9555_value_2;
 
 #ifdef USE_ADS111X
 	static i2c_dev_t m_ads111x_I2C;
@@ -35,6 +36,16 @@ static uint16_t  m_last_pca9555_value;
 
 static const char *TAG = "SG-CTRL";
 static bool m_active = false;
+
+static const uint8_t pca9555_io2_mapping[16] = { ENC1_SW,    ENC1_CW,     ENC1_CCW,      OUT_MIC_VCC,    OUT_PREAMP_EN,     LOOP_SW,    PWM_0,    PWM_1, 
+										 	    /*pin0*/  /*pin1(A)*/   /*pin2(B)*/      /*pin3*/  /*pin4*/  	/*pin5*/  /*pin6*/ /*pin7*/
+                                                OUT_9V,     PWM_EN,   PWM_2, OUT_OLED_KEY_EN, BT_BUTTON1, BT_BUTTON2, BT_BUTTON3, BT_BUTTON4 };
+                                                /*pin8*/  /*pin9*/ /*pin10*/  /*Pin11*/    /*pin12*/  /*pin13*/   /*pin14*/   /*pin16*/
+static uint32_t pca9555_io2_pressed_time = 0;
+static int pca9555_io2_pressed_key = -1;
+static const uint16_t pca9555_input2_mask = 0x072F;
+static uint32_t pca9555_io2_trigger_ticks[3];
+
 
 static const uint8_t pca9555_io_mapping[16] = { BT_VOLUME_SW,  EN_VOLUME_UP, EN_VOLUME_DOWN,  BT_STOP,   BT_PLAY, BT_REC,  BT_REWARD, BT_FORWARD,
 										 	    /*pin0*/        /*pin1(A)*/   /*pin2(B)*/      /*pin3*/  /*pin4*/ /*pin5*/ /*pin6*/   /*pin7*/
@@ -59,44 +70,103 @@ static int64_t GetMicro( void ) {
 }
 *----------------------------------------------------------*/
 
-static void pca9555_change_proc(uint16_t value)
+static void pca9555_change_proc(uint32_t io_num, uint16_t value)
 {	
-	/* proccess all buttons and encoders first */
-	uint16_t xor = (m_last_pca9555_value ^ value) & pca9555_input_mask;
-
-	for (int i=0; xor; i++, xor>>=1)
+	if (io_num == GPIO_INT_IO_PIN)
 	{
-		if ((xor & 0x1) && m_evt_callback_func)
+		/* proccess all buttons and encoders first */
+		uint16_t xor = (m_last_pca9555_value ^ value) & pca9555_input_mask;
+
+		for (int i=0; xor; i++, xor>>=1)
 		{
-			//Check if control is encoder.
-			if (pca9555_io_mapping[i] == EN_VOLUME_UP || pca9555_io_mapping[i] == EN_VOLUME_DOWN)
+			if ((xor & 0x1) && m_evt_callback_func)
 			{
-				if (!!(value & (1<<i)) != !!(value & (1<<((i&1)?(i+1):(i-1)))))
-					m_evt_callback_func(pca9555_io_mapping[i], EVT_STEP);
-				pca9555_io_pressed_key = -1;
-			}
-			else
-			{
-				bool bRelease = (value & (1<<i));
-				EVT_BUTTON_E evt = EVT_PRESSED;
-				if (bRelease)
+				//Check if control is encoder.
+				if (pca9555_io_mapping[i] == EN_VOLUME_UP || pca9555_io_mapping[i] == EN_VOLUME_DOWN)
 				{
-					evt = (pca9555_io_pressed_key == i && ((xTaskGetTickCount() - pca9555_io_pressed_time)*portTICK_PERIOD_MS) > 1000)? 
-						  EVT_LONGPRESS : EVT_RELEASED;
+					if (!!(value & (1<<i)) != !!(value & (1<<((i&1)?(i+1):(i-1)))))
+						m_evt_callback_func(pca9555_io_mapping[i], EVT_STEP);
 					pca9555_io_pressed_key = -1;
 				}
 				else
 				{
-					pca9555_io_pressed_key = i;
-					pca9555_io_pressed_time = xTaskGetTickCount();
+					bool bRelease = (value & (1<<i));
+					EVT_BUTTON_E evt = EVT_PRESSED;
+					if (bRelease)
+					{
+						evt = (pca9555_io_pressed_key == i && ((xTaskGetTickCount() - pca9555_io_pressed_time)*portTICK_PERIOD_MS) > 1000)? 
+							  EVT_LONGPRESS : EVT_RELEASED;
+						pca9555_io_pressed_key = -1;
+					}
+					else
+					{
+						pca9555_io_pressed_key = i;
+						pca9555_io_pressed_time = xTaskGetTickCount();
+					}
+					/* TODO: add read procedure and add the call to calback to the main app */
+					m_evt_callback_func(pca9555_io_mapping[i], evt);
 				}
-				/* TODO: add read procedure and add the call to calback to the main app */
-				m_evt_callback_func(pca9555_io_mapping[i], evt);
 			}
 		}
-	}
 
-	m_last_pca9555_value = value;
+		m_last_pca9555_value = value;
+	}
+	else if (io_num == GPIO_INT2_IO_PIN)
+	{
+		/* proccess all buttons and encoders first */
+		uint16_t xor = (m_last_pca9555_value_2 ^ value) & pca9555_input2_mask;
+
+		for (int i=0; xor; i++, xor>>=1)
+		{
+			if ((xor & 0x1) && m_evt_callback2_func)
+			{
+				//Check if control is encoder.
+				if (pca9555_io2_mapping[i] == ENC1_CW || pca9555_io2_mapping[i] == ENC1_CCW)
+				{
+					if (!!(value & (1<<i)) != !!(value & (1<<((i&1)?(i+1):(i-1)))))
+						m_evt_callback2_func(pca9555_io2_mapping[i], EVT_STEP);
+					pca9555_io2_pressed_key = -1;
+				}
+				//Check if control is PWM.
+				if (pca9555_io2_mapping[i] == PWM_0 || pca9555_io2_mapping[i] == PWM_1 || pca9555_io2_mapping[i] == PWM_2)
+				{
+					int idx = 	(pca9555_io2_mapping[i] == PWM_0)?0:
+								(pca9555_io2_mapping[i] == PWM_1)?1:
+								2;
+
+					if (value & (1<<i))
+						pca9555_io2_trigger_ticks[idx] = xTaskGetTickCount();
+					else
+					{
+						int period = ((xTaskGetTickCount() - pca9555_io2_trigger_ticks[idx]) * portTICK_PERIOD_MS);
+						if (period <= 250)
+							m_evt_callback2_func(pca9555_io2_mapping[i], (period*250)/100);
+					}
+					pca9555_io2_pressed_key = -1;
+				}
+				else
+				{
+					bool bRelease = (value & (1<<i));
+					EVT_BUTTON_E evt = EVT_PRESSED;
+					if (bRelease)
+					{
+						evt = (pca9555_io2_pressed_key == i && ((xTaskGetTickCount() - pca9555_io2_pressed_time)*portTICK_PERIOD_MS) > 1000)? 
+							  EVT_LONGPRESS : EVT_RELEASED;
+						pca9555_io2_pressed_key = -1;
+					}
+					else
+					{
+						pca9555_io2_pressed_key = i;
+						pca9555_io2_pressed_time = xTaskGetTickCount();
+					}
+					/* TODO: add read procedure and add the call to calback to the main app */
+					m_evt_callback2_func(pca9555_io2_mapping[i], evt);
+				}
+			}
+		}
+
+		m_last_pca9555_value = value;
+	}
 }
 
 static void IRAM_ATTR gpio_isr_handler(void* arg)
@@ -113,19 +183,24 @@ static void gpio_task_loop(void* arg)
     while (m_active) {
         if (xQueueReceive(m_gpio_evt_queue, &io_num, (1000 / portTICK_PERIOD_MS))) 
         {
-        	uint16_t sr = PCA9555_get(&m_pca9555_I2C);
+        	uint16_t sr = PCA9555_get((io_num==GPIO_INT_IO_PIN)?&m_pca9555_I2C:&m_pca9555_I2C_2);
         
         	if (gpio_get_level(io_num) == 0)
         	{
             	//ESP_LOGW(TAG, "GPIO[%d] intr, val: %d sr=0x%04x\n", io_num, gpio_get_level(io_num), sr);
 
-            	pca9555_change_proc(sr);
+            	pca9555_change_proc(io_num, sr);
             }
         }
-        else if (gpio_get_level(io_num) == 0)
+        else if (gpio_get_level(GPIO_INT_IO_PIN) == 0)
         {
         	 uint16_t sr = PCA9555_get(&m_pca9555_I2C);
-        	 ESP_LOGW(TAG, "GPIO[%d] intr, val: %d sr=0x%04x\n", io_num, gpio_get_level(io_num), sr);
+        	 ESP_LOGW(TAG, "GPIO[%d] intr, val: %d sr=0x%04x\n", GPIO_INT_IO_PIN, gpio_get_level(GPIO_INT_IO_PIN), sr);
+        }
+        else if (gpio_get_level(GPIO_INT2_IO_PIN) == 0)
+        {
+        	 uint16_t sr = PCA9555_get(&m_pca9555_I2C_2);
+        	 ESP_LOGW(TAG, "GPIO[%d] intr, val: %d sr=0x%04x\n", GPIO_INT2_IO_PIN, gpio_get_level(GPIO_INT2_IO_PIN), sr);
         }
 
 #ifdef USE_ADS111X
@@ -227,13 +302,29 @@ esp_err_t init_ctrl_board()
 	m_pca9555_I2C.addr = (PCA9555_DEVICE_ADDRESS | PCA9555_DEV_000);
 	if ( i2c_dev_read_reg(&m_pca9555_I2C, 0, &tmp, 1) == ESP_OK )
 	{
-		ESP_LOGW(TAG, "* Found PCA9555 device and read %d ", tmp); 
+		ESP_LOGW(TAG, "* Found PCA9555 first device and read %d ", tmp); 
 		PCA9555_set(&m_pca9555_I2C, (pca9555_led_bits[0] | pca9555_led_bits[1]));
 		PCA9555_dir(&m_pca9555_I2C, ~(pca9555_led_bits[0] | pca9555_led_bits[1] | pca9555_oled_bit));
 		m_last_pca9555_value = PCA9555_get(&m_pca9555_I2C);
 
 	    //hook isr handler for specific gpio pin
 	    if (ESP_OK != gpio_isr_handler_add(GPIO_INT_IO_PIN, gpio_isr_handler, (void*) GPIO_INT_IO_PIN) )
+	    {
+	    	m_active = false;
+	    	return ESP_FAIL;
+	    }
+	}
+
+	m_pca9555_I2C_2.addr = (PCA9555_DEVICE2_ADDRESS | PCA9555_DEV_000);
+	if ( i2c_dev_read_reg(&m_pca9555_I2C_2, 0, &tmp, 1) == ESP_OK )
+	{
+		ESP_LOGW(TAG, "* Found PCA9555 second device and read %d ", tmp); 
+		PCA9555_set(&m_pca9555_I2C_2, ~(pca9555_input2_mask) & ~(1<<PWM_EN));
+		PCA9555_dir(&m_pca9555_I2C_2, pca9555_input2_mask);
+		m_last_pca9555_value_2 = PCA9555_get(&m_pca9555_I2C_2);
+
+	    //hook isr handler for specific gpio pin
+	    if (ESP_OK != gpio_isr_handler_add(GPIO_INT2_IO_PIN, gpio_isr_handler, (void*)GPIO_INT2_IO_PIN) )
 	    {
 	    	m_active = false;
 	    	return ESP_FAIL;
@@ -249,9 +340,10 @@ void clear_ctrl_board()
 }
 
 /* Control board initialization */
-void registrate_cb(button_cb_t cb)
+void registrate_cb(button_cb_t cb, button2_cb_t cb2)
 {
 	m_evt_callback_func = cb;
+	m_evt_callback2_func = cb2;
 }
 
 /* Control LED on board */
@@ -266,6 +358,20 @@ void set_led(CTRL_BUTTON_E led, bool bOn)
 		PCA9555_set(&m_pca9555_I2C, lastValue); 
 	}
 }
+
+/* Control second board outputs */
+void set_gpio_out(CTRL2_BUTTON_E io, bool bOn)
+{
+	if ( (1<<io) & (~pca9555_input2_mask) )
+	{
+		uint16_t lastValue = PCA9555_get(&m_pca9555_I2C_2);
+		uint16_t bit = (1<<io);
+
+		lastValue = (lastValue & ~(bit)) | (bOn?0:bit);  
+		PCA9555_set(&m_pca9555_I2C_2, lastValue); 
+	}
+}
+
 
 /******************************* Display *************************/
 static void show_display_volume(player_state_t * state)
@@ -357,6 +463,15 @@ static void show_display_song(player_state_t * state)
 
 	/* Clear screen */
 	SSD1306_Clear(&m_Dev_I2C, false);
+
+	//Display off when recording
+	//if ((state->rec_state % 3)==1)
+	//{
+	//	SSD1306_DisplayOff(&m_Dev_I2C);
+	//	return;
+	//}
+	//else
+	//	SSD1306_DisplayOn(&m_Dev_I2C);
 	
 	/* drow text line */
 	FontDrawAnchoredString(&m_Dev_I2C, txtMsg, TextAnchor_North, true);

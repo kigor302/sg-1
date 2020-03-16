@@ -80,6 +80,14 @@ static bool saveload_config(bool bsave)
     return (bresult);
 }
 
+static void button2_ctrl_proc(CTRL2_BUTTON_E bt, EVT_BUTTON_E evt)
+{
+    if (evt == EVT_RELEASED)
+        return;
+
+    ESP_LOGW(TAG, "[ * ] BT2 control %d, value %d", bt, evt);
+}
+
 static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
 {
     if (evt == EVT_RELEASED || (evt == EVT_LONGPRESS && bt != BT_SET))
@@ -698,7 +706,7 @@ void app_main(void)
 
     ESP_LOGI(TAG, "[4.3] Initialize control board");
     if (ESP_OK == init_ctrl_board())
-        registrate_cb(button_ctrl_proc);
+        registrate_cb(button_ctrl_proc, button2_ctrl_proc);
 
     button_ctrl_proc(BT_FORWARD, EVT_PRESSED);
     button_ctrl_proc(BT_REWARD, EVT_PRESSED);
