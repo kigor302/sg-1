@@ -39,11 +39,11 @@ static bool m_active = false;
 
 static const uint8_t pca9555_io2_mapping[16] = { ENC1_SW,    ENC1_CW,     ENC1_CCW,      OUT_MIC_VCC,    OUT_PREAMP_EN,     LOOP_SW,    PWM_0,    PWM_1, 
 										 	    /*pin0*/  /*pin1(A)*/   /*pin2(B)*/      /*pin3*/  /*pin4*/  	/*pin5*/  /*pin6*/ /*pin7*/
-                                                OUT_9V,     PWM_EN,   PWM_2, OUT_OLED_KEY_EN, BT_BUTTON1, BT_BUTTON2, BT_BUTTON3, BT_BUTTON4 };
-                                                /*pin8*/  /*pin9*/ /*pin10*/  /*Pin11*/    /*pin12*/  /*pin13*/   /*pin14*/   /*pin16*/
+                                                OUT_9V,     PWM_EN,   PWM_2, OUT_OLED_KEY_EN, BT_BUTTON4, BT_BUTTON3, BT_BUTTON2, BT_BUTTON1 };
+                                                /*pin8*/  /*pin9*/ /*pin10*/  /*Pin11*/    /*pin12*/  /*pin13*/   /*pin14*/   /*pin15*/
 static uint32_t pca9555_io2_pressed_time = 0;
 static int pca9555_io2_pressed_key = -1;
-static const uint16_t pca9555_input2_mask = 0x072F;
+static const uint16_t pca9555_input2_mask = 0xF4E7;
 static uint32_t pca9555_io2_trigger_ticks[3];
 
 
@@ -139,14 +139,17 @@ static void pca9555_change_proc(uint32_t io_num, uint16_t value)
 					else
 					{
 						int period = ((xTaskGetTickCount() - pca9555_io2_trigger_ticks[idx]) * portTICK_PERIOD_MS);
-						if (period <= 250)
-							m_evt_callback2_func(pca9555_io2_mapping[i], (period*250)/100);
+						if (period <= 185)
+							m_evt_callback2_func(pca9555_io2_mapping[i], (period*100)/185);
 					}
 					pca9555_io2_pressed_key = -1;
 				}
 				else
 				{
 					bool bRelease = (value & (1<<i));
+                    
+                    //ESP_LOGW(TAG, "EV value=0x%.4X i=%d/%d, Release=%X\n", value, i, pca9555_io2_mapping[i], (value & (1<<i)) );
+                    
 					EVT_BUTTON_E evt = EVT_PRESSED;
 					if (bRelease)
 					{
@@ -165,7 +168,7 @@ static void pca9555_change_proc(uint32_t io_num, uint16_t value)
 			}
 		}
 
-		m_last_pca9555_value = value;
+		m_last_pca9555_value_2 = value;
 	}
 }
 
@@ -319,8 +322,8 @@ esp_err_t init_ctrl_board()
 	if ( i2c_dev_read_reg(&m_pca9555_I2C_2, 0, &tmp, 1) == ESP_OK )
 	{
 		ESP_LOGW(TAG, "* Found PCA9555 second device and read %d ", tmp); 
-		PCA9555_set(&m_pca9555_I2C_2, ~(pca9555_input2_mask) & ~(1<<PWM_EN));
-		PCA9555_dir(&m_pca9555_I2C_2, pca9555_input2_mask);
+		PCA9555_set(&m_pca9555_I2C_2, ~pca9555_input2_mask);
+		PCA9555_dir(&m_pca9555_I2C_2,  pca9555_input2_mask);
 		m_last_pca9555_value_2 = PCA9555_get(&m_pca9555_I2C_2);
 
 	    //hook isr handler for specific gpio pin
@@ -367,7 +370,7 @@ void set_gpio_out(CTRL2_BUTTON_E io, bool bOn)
 		uint16_t lastValue = PCA9555_get(&m_pca9555_I2C_2);
 		uint16_t bit = (1<<io);
 
-		lastValue = (lastValue & ~(bit)) | (bOn?0:bit);  
+		lastValue = (lastValue & ~(bit)) | ((bOn)?bit:0);  
 		PCA9555_set(&m_pca9555_I2C_2, lastValue); 
 	}
 }

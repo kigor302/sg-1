@@ -82,6 +82,15 @@ static bool saveload_config(bool bsave)
 
 static void button2_ctrl_proc(CTRL2_BUTTON_E bt, EVT_BUTTON_E evt)
 {
+    /*
+    if (bt == LOOP_SW)
+    {
+        ESP_LOGW(TAG, "[ * ] LOOP_SW, value %d", evt);
+        set_gpio_out(PWM_EN, !(evt == EVT_RELEASED || evt == EVT_LONGPRESS));
+        return;
+    }
+    */
+
     if (evt == EVT_RELEASED)
         return;
 
