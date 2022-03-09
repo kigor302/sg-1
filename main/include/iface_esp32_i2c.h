@@ -4,7 +4,7 @@
 #include "esp_err.h"
 #include "ssd1306.h"
 
-#define USE_THIS_I2C_PORT I2C_NUM_0
+#define USE_THIS_I2C_PORT I2C_NUM_1
 
 #define CONFIG_I2CDEV_TIMEOUT	1000 /* One second timout for I2C access */
 
@@ -66,11 +66,8 @@ esp_err_t i2c_dev_write(const i2c_dev_t *dev, const void *out_reg,
  * @param[in] in_size Number of byte to read
  * @return ESP_OK on success
  */
-inline esp_err_t i2c_dev_read_reg(const i2c_dev_t *dev, uint8_t reg,
-        void *in_data, size_t in_size)
-{
-    return i2c_dev_read(dev, &reg, 1, in_data, in_size);
-}
+esp_err_t i2c_dev_read_reg(const i2c_dev_t *dev, uint8_t reg,
+        void *in_data, size_t in_size);
 
 /**
  * @brief Write to register with an 8-bit address
@@ -82,11 +79,8 @@ inline esp_err_t i2c_dev_read_reg(const i2c_dev_t *dev, uint8_t reg,
  * @param[in] out_size Size of data to send
  * @return ESP_OK on success
  */
-inline esp_err_t i2c_dev_write_reg(const i2c_dev_t *dev, uint8_t reg,
-        const void *out_data, size_t out_size)
-{
-    return i2c_dev_write(dev, &reg, 1, out_data, out_size);
-}
+esp_err_t i2c_dev_write_reg(const i2c_dev_t *dev, uint8_t reg,
+        const void *out_data, size_t out_size);
 
 int ESP32_WriteCommand_I2C( struct SSD1306_Device* DeviceHandle, SSDCmd SSDCommand );
 int ESP32_WriteData_I2C( struct SSD1306_Device* DeviceHandle, uint8_t* Data, size_t DataLength );

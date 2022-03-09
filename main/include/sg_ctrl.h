@@ -10,22 +10,42 @@
 
 #define ESP_INTR_FLAG_DEFAULT 0
 #define GPIO_INT_IO_PIN       5
-#define GPIO_INT2_IO_PIN      19
+//#define GPIO_INT2_IO_PIN      19
 #define GPIO_SCL_PIN		  23
 #define GPIO_SDA_PIN		  18
 #define GPIO_INPUT_PIN_SEL    (1ULL<<GPIO_INT_IO_PIN)
+#define GPIO_PREAMP_IO_PIN	  (19)
 
 #define MAX_SONGS			  (9)
 #define MAX_TRACKS			  (5)
 #define MAX_EQ_BANDS		  (10)
-#define MAX_VOL_BANDS		  (8)
+#define MAX_VOL_BANDS		  (4) /*8*/
 #define MAX_REC_OPTONS		  (4)
 
-typedef enum { ENC1_SW=0, ENC1_CW, ENC1_CCW, OUT_MIC_VCC, OUT_PREAMP_EN, LOOP_SW, PWM_0, PWM_1,
-			   OUT_9V,  PWM_EN, PWM_2, OUT_OLED_KEY_EN, BT_BUTTON1, BT_BUTTON2, BT_BUTTON3, BT_BUTTON4 }CTRL2_BUTTON_E;
+typedef enum { POTS_PLAY=0, POTS_REC, POTS_TONE, MAX_POTS }POTS_E;
 
-typedef enum { BT_LEFT=0, BT_RIGTH, BT_UP, BT_DOWN, BT_SET, BT_PLAY, BT_REC, BT_STOP, BT_FORWARD, 
-	           BT_REWARD, EN_VOLUME_UP, EN_VOLUME_DOWN, BT_VOLUME_SW, OUT_LED_GREEN, OUT_LED_RED, OUT_OLED }CTRL_BUTTON_E;
+typedef enum { LVL_6=0, LVL_5, LVL_4, LVL_3, LVL_2, LVL_1, RESERVED_A, RESERVED_B, 
+			   IO1_0, IO1_1,  IO1_2,  IO1_3,  IO1_4,  IO1_5,  IO1_6,  IO1_7 }CTRL2_BUTTON_E;
+
+//typedef enum { ENC1_SW=0, ENC1_CW, ENC1_CCW, OUT_MIC_VCC, OUT_PREAMP_EN, LOOP_SW, PWM_0, PWM_1,
+//			   OUT_9V,  PWM_EN, PWM_2, OUT_OLED_KEY_EN, BT_BUTTON1, BT_BUTTON2, BT_BUTTON3, BT_BUTTON4 }CTRL2_BUTTON_E;
+
+#define OUT_LED_GREEN       PLAY_LED
+#define OUT_LED_RED         REC_LED
+typedef enum { ENC1_SW=0, ENC1_CW,  ENC1_CCW,  BT_REC,   BT_STOP,   BT_PLAY,    PLAY_LED,    REC_LED, 
+               POTS_EN,    BRG_A,  BRG_B,    BRG_INH,   STOP_LED,   BT_FORWARD/*RESERVED_X*/, BT_REWARD/*RESERVED_Y*/, OUT_OLED }CTRL_BUTTON_E;
+
+//typedef enum { BT_LEFT=0, BT_RIGTH, BT_UP, BT_DOWN, BT_SET, BT_PLAY, BT_REC, BT_STOP, BT_FORWARD, 
+//	             BT_REWARD, EN_VOLUME_UP, EN_VOLUME_DOWN, BT_VOLUME_SW, OUT_LED_GREEN, OUT_LED_RED, OUT_OLED }CTRL_BUTTON_E;
+
+/*
+typedef enum { BT_LEFT=16, BT_RIGTH, BT_UP, BT_DOWN, BT_SET, 
+	           BT_FORWARD, BT_REWARD, EN_VOLUME_UP, EN_VOLUME_DOWN,
+	           BT_VOLUME_SW, OUT_LED_GREEN, OUT_LED_RED,
+	           OUT_MIC_VCC, OUT_PREAMP_EN, LOOP_SW, PWM_0, PWM_1, 
+	           OUT_9V,  PWM_EN, PWM_2, OUT_OLED_KEY_EN } CTRL_WORKAROND_E;
+*/
+
 
 typedef enum { EVT_PRESSED=0, EVT_RELEASED, EVT_STEP, EVT_LONGPRESS }EVT_BUTTON_E;
 
@@ -93,12 +113,13 @@ typedef struct _player_state
 
 typedef void (*button_cb_t)(CTRL_BUTTON_E bt, EVT_BUTTON_E evt);
 typedef void (*button2_cb_t)(CTRL2_BUTTON_E bt, EVT_BUTTON_E evt);
+typedef void (*pots_cb_t)(POTS_E pot, int value);
 
 /* Control board initialization */
 esp_err_t init_ctrl_board();
 
 /* Control board initialization */
-void registrate_cb(button_cb_t cb, button2_cb_t cb2);
+void registrate_cb(button_cb_t cb, button2_cb_t cb2, pots_cb_t cb3);
 
 /* Control LED on board */
 void set_led(CTRL_BUTTON_E led, bool bOn);
@@ -109,7 +130,8 @@ void display_player_state(player_state_t * state);
 void display_clear(void);
 
 /* Control second board outputs */
-void set_gpio_out(CTRL2_BUTTON_E led, bool bOn);
+void set_gpio_out_1(CTRL2_BUTTON_E gpio, bool bOn);
+void set_gpio_out_0(CTRL_BUTTON_E gpio, bool bOn);
 
 
 #endif

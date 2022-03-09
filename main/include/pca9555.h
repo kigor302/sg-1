@@ -34,7 +34,7 @@
 #include "iface_esp32_i2c.h"
 
 #define PCA9555_DEVICE_ADDRESS 0x20
-#define PCA9555_DEVICE2_ADDRESS 0x27
+#define PCA9555_DEVICE2_ADDRESS 0x22 //0x27
 
 /**
  *  Eight possible device addresses. The rightmost (least significant)
@@ -102,10 +102,7 @@ uint16_t PCA9555_read(i2c_dev_t *dev, PCA9555_REGISTER reg);
  *  @param port Write to port 0 or 1.
  *  @param dir 8 bit direction of the pins. 1 means input, 0 output.
  */
-inline void PCA9555_dir(i2c_dev_t *dev, uint16_t dir)
-{
-	PCA9555_write(dev, PCA9555_DIRECTION_0, dir);
-}
+void PCA9555_dir(i2c_dev_t *dev, uint16_t dir);
 
 /**
  *  Invert the polarity of pins on a port. Take care when using this function
@@ -117,10 +114,7 @@ inline void PCA9555_dir(i2c_dev_t *dev, uint16_t dir)
  *  @param dev 3 bit device address.
  *  @param port Write to port 0 or 1.
  *  @param pol 8 bit polarity of the pins. 1 means invert, 0 no change. */
-inline void PCA9555_pol(i2c_dev_t *dev, uint16_t pol)
-{
-	PCA9555_write(dev, PCA9555_POLARITY_INV_0, pol);
-}
+void PCA9555_pol(i2c_dev_t *dev, uint16_t pol);
 
 /**
  *  Set values on a port. Implemented as a macro.
@@ -128,10 +122,7 @@ inline void PCA9555_pol(i2c_dev_t *dev, uint16_t pol)
  *  @param port Write to port 0 or 1.
  *  @param value New 8 bit value for the port.
  */
-inline void PCA9555_set(i2c_dev_t *dev, uint16_t value)
-{
-	PCA9555_write(dev, PCA9555_OUTPUT_0, value);
-}
+void PCA9555_set(i2c_dev_t *dev, uint16_t value);
 
 /**
  *  Get values from a port.
@@ -139,10 +130,7 @@ inline void PCA9555_set(i2c_dev_t *dev, uint16_t value)
  *  @param port Write to port 0 or 1.
  *  @return 8 bit value on the port.
  */
-inline uint16_t PCA9555_get(i2c_dev_t *dev)
-{
-	return PCA9555_read(dev, PCA9555_INPUT_0);
-}
+uint16_t PCA9555_get(i2c_dev_t *dev);
 
 
 #endif /* [PCA9555] */
