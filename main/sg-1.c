@@ -114,20 +114,42 @@ static void pots_ctrl_proc(POTS_E pot, int value)
 {
     /* 0 - play vloume, 1 - record volume*/
     int curs =  (pot == POTS_PLAY)? 0:
-                (pot == POTS_REC)? 3:
+                (pot == POTS_REC)?  2:
+                (pot == POTS_TONE)? 3:
                 -1;
     
     if (curs >= 0)
     {
-        m_state.volume.bands[curs] = value;
-        audio_hal_set_volume_ex(board_handle->audio_hal, m_state.volume.bands[curs], 
-                               (audio_hal_volume_src_t)curs, AUDIO_HAL_VOL_CHANNEL_BOTH);
+        if (pot == POTS_REC || pot == POTS_TONE)
+        {
+            audio_hal_volume_channel_t ch = (pot == POTS_REC)? AUDIO_HAL_VOL_CHANNEL_LEFT:
+                                                               AUDIO_HAL_VOL_CHANNEL_RIGHT;
+
+            m_state.volume.bands[curs] = value;
+            audio_hal_set_volume_ex(board_handle->audio_hal, m_state.volume.bands[curs], 
+                                    AUDIO_HAL_VOL_IN_MIC, ch);
+            /*
+            int offs = (m_state.volume.bands[curs] - value);
+            m_state.volume.bands[curs] -= offs;
+            m_state.volume.bands[curs-1] -= offs;
+            audio_hal_set_volume_ex(board_handle->audio_hal, m_state.volume.bands[curs-1], 
+                       (audio_hal_volume_src_t)(curs-1), AUDIO_HAL_VOL_CHANNEL_LEFT);
+            audio_hal_set_volume_ex(board_handle->audio_hal, m_state.volume.bands[curs], 
+                       (audio_hal_volume_src_t)curs, AUDIO_HAL_VOL_CHANNEL_RIGHT);
+            */
+        }
+        else
+        {
+            m_state.volume.bands[curs] = value;
+            audio_hal_set_volume_ex(board_handle->audio_hal, m_state.volume.bands[curs], 
+                                   (audio_hal_volume_src_t)curs, AUDIO_HAL_VOL_CHANNEL_BOTH);
+        }
 
         if (m_state.display == D_VOLUME)
             display_player_state(&m_state);
-
-        ESP_LOGW(TAG, "[ * ] POTS control %d, value %d", pot, value);
     }
+
+    ESP_LOGW(TAG, "[ * ] POTS control %d, value %d", pot, value);
 }
 
 static void button2_ctrl_proc(CTRL2_BUTTON_E bt, EVT_BUTTON_E evt)
@@ -220,8 +242,8 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
             {
                 //m_state.volume.bands[m_state.volume.cursor] = ((m_state.volume.bands[m_state.volume.cursor]+10) % 100);
                 m_state.volume.cursor = (m_state.volume.cursor+1) % MAX_VOL_BANDS;
-                audio_hal_set_volume_ex(board_handle->audio_hal, m_state.volume.bands[m_state.volume.cursor], 
-                                    (audio_hal_volume_src_t)m_state.volume.cursor, AUDIO_HAL_VOL_CHANNEL_BOTH);
+                //audio_hal_set_volume_ex(board_handle->audio_hal, m_state.volume.bands[m_state.volume.cursor], 
+                //                    (audio_hal_volume_src_t)m_state.volume.cursor, AUDIO_HAL_VOL_CHANNEL_BOTH);
             }
             else if (m_state.display == D_EQUALIZER)
             {
@@ -504,8 +526,13 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
                 if (m_state.volume.bands[m_state.volume.cursor] < 0)
                     m_state.volume.bands[m_state.volume.cursor] = 0;
 
+
+                audio_hal_volume_channel_t ch = (m_state.volume.cursor == AUDIO_HAL_VOL_IN_LINEIN)? AUDIO_HAL_VOL_CHANNEL_LEFT:
+                                                (m_state.volume.cursor == AUDIO_HAL_VOL_IN_MIC)? AUDIO_HAL_VOL_CHANNEL_RIGHT:
+                                                AUDIO_HAL_VOL_CHANNEL_BOTH;
+
                 audio_hal_set_volume_ex(board_handle->audio_hal, m_state.volume.bands[m_state.volume.cursor], 
-                                    (audio_hal_volume_src_t)m_state.volume.cursor, AUDIO_HAL_VOL_CHANNEL_BOTH);
+                                    (audio_hal_volume_src_t)m_state.volume.cursor+((ch==AUDIO_HAL_VOL_CHANNEL_LEFT)?1:0), ch);
             }
             else if (m_state.display == D_EQUALIZER)
             {
@@ -603,8 +630,8 @@ static audio_element_handle_t setup_fatfs(bool bPlayer, const char * url)
 {
     audio_element_info_t info;
     fatfs_stream_cfg_t fatfs_cfg = FATFS_STREAM_CFG_DEFAULT();
-    fatfs_cfg.out_rb_size = bPlayer? (32 * 1024 * 4): (32 * 1024 * 6);
-    fatfs_cfg.buf_sz = bPlayer? (1024 * 32): (1024 * 24);
+    fatfs_cfg.out_rb_size = (256 * 1024); //bPlayer? (128 * 1024): (192 * 1024);
+    fatfs_cfg.buf_sz = (64 * 1024); //bPlayer? (32 * 1024): (24 * 1024);
     fatfs_cfg.type = bPlayer? AUDIO_STREAM_READER: AUDIO_STREAM_WRITER;
     audio_element_handle_t fatfs_stream = fatfs_stream_init(&fatfs_cfg);
     audio_element_set_uri(fatfs_stream, url);
@@ -784,9 +811,14 @@ void app_main(void)
 #endif
 */
         /* set all volumes */
-        for (int v=0; v<MAX_VOL_BANDS; v++)
+        for (int v=0; v<MAX_VOL_BANDS; v++) {
+            audio_hal_volume_channel_t ch = (v == AUDIO_HAL_VOL_IN_LINEIN)? AUDIO_HAL_VOL_CHANNEL_LEFT:
+                                            (v == AUDIO_HAL_VOL_IN_MIC)? AUDIO_HAL_VOL_CHANNEL_RIGHT:
+                                            AUDIO_HAL_VOL_CHANNEL_BOTH;
+
             audio_hal_set_volume_ex(board_handle->audio_hal, m_state.volume.bands[v], 
-                                    (audio_hal_volume_src_t)v, AUDIO_HAL_VOL_CHANNEL_BOTH);
+                                    (audio_hal_volume_src_t)v+((ch==AUDIO_HAL_VOL_CHANNEL_LEFT)?1:0), ch);
+        }
     }
 
     pipeline_for_play = setup_play_pipeline(NULL);

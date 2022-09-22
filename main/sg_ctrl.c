@@ -471,7 +471,7 @@ void set_gpio_out_0(CTRL_BUTTON_E io, bool bOn)
 /******************************* Display *************************/
 static void show_display_volume(player_state_t * state)
 {
-	static const char * bands_msg[MAX_VOL_BANDS] = { "dac", "adc", "lin", "mic" /*, "hp", "spk", "boost", "aux"*/ };
+	static const char * bands_msg[MAX_VOL_BANDS] = { "dac", "adc", "mL", "mR" /*, "hp", "spk", "boost", "aux"*/ };
 	int page_offset = (state->volume.cursor >= (MAX_VOL_BANDS/1/*2*/))? MAX_VOL_BANDS/1/*2*/ : 0;
 
 	/* Clear screen */
@@ -512,7 +512,6 @@ static void show_display_volume(player_state_t * state)
 
 	/* Return back right font selection */
 	SSD1306_SetFont(&m_Dev_I2C, &Font_Liberation_Serif_19x19);
-
 }
 
 static uint8_t fonts_12x8[5][18] = {

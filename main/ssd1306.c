@@ -223,14 +223,15 @@ static int SSD1306_Init( struct SSD1306_Device* DeviceHandle, int Width, int Hei
     SSD1306_SetMuxRatio( DeviceHandle, 0x3F );
     SSD1306_SetDisplayOffset( DeviceHandle, 0x00 );
     SSD1306_SetDisplayStartLine( DeviceHandle, 0 );
-    SSD1306_SetHFlip( DeviceHandle, false );
-    SSD1306_SetVFlip( DeviceHandle, false );
 
     if ( Height == 64 ) {
         SetCOMPinConfiguration( DeviceHandle, COM_Disable_LR_Remap, COM_Pins_Alternative, COM_ScanDir_LR );
     } else {
         SetCOMPinConfiguration( DeviceHandle, COM_Disable_LR_Remap, COM_Pins_Sequential, COM_ScanDir_LR );
     }
+
+    SSD1306_SetHFlip( DeviceHandle, true );    
+    SSD1306_SetVFlip( DeviceHandle, true );
     
     SSD1306_SetContrast( DeviceHandle, 0x7F );
     SSD1306_DisableDisplayRAM( DeviceHandle );
