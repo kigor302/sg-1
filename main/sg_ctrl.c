@@ -666,6 +666,16 @@ void show_display_recoptions(player_state_t * state)
 	SSD1306_SetFont(&m_Dev_I2C, &Font_Liberation_Serif_19x19);
 }
 
+static void show_display_selectsong(player_state_t * state)
+{
+
+SSD1306_Clear(&m_Dev_I2C, false);
+//SSD1306_SetFont(&m_Dev_I2C, &Font_Ubuntu_Mono_6x10);
+
+FontDrawAnchoredString(&m_Dev_I2C, "Song Selector", TextAnchor_North, true);
+
+SSD1306_Update(&m_Dev_I2C);
+}
 
 void display_player_state(player_state_t * state)
 {
@@ -675,6 +685,7 @@ void display_player_state(player_state_t * state)
 	switch (state->display)
 	{
 		case D_SONG:		show_display_song(state);       break;
+		case D_SELECT_SONG: show_display_selectsong(state); break;
 		case D_VOLUME:		show_display_volume(state);     break;
 		case D_EQUALIZER:   show_display_equlizer(state);   break;
 		case D_REC_OPT:     show_display_recoptions(state); break;

@@ -16,7 +16,7 @@
 #define GPIO_INPUT_PIN_SEL    (1ULL<<GPIO_INT_IO_PIN)
 #define GPIO_PREAMP_IO_PIN	  (19)
 
-#define MAX_SONGS			  (9)
+#define MAX_SONGS			  (99)
 #define MAX_TRACKS			  (5)
 #define MAX_EQ_BANDS		  (10)
 #define MAX_VOL_BANDS		  (4) /*8*/
@@ -52,7 +52,7 @@ typedef enum { EVT_PRESSED=0, EVT_RELEASED, EVT_STEP, EVT_LONGPRESS }EVT_BUTTON_
 typedef enum { P_STOPED=0, P_PLAYING,   P_PAUSE }PLAY_STATE_E;
 typedef enum { R_STOPED=0, R_RECORDING, R_MUTE }REC_STATE_E;
 typedef enum { SRC_LINEIN=0, SRC_MIC }REC_SOURCE_E;
-typedef enum { D_SONG =0, D_VOLUME, D_EQUALIZER, D_REC_OPT, D_MAX_OPTIONS }DISPLAY_E;
+typedef enum { D_SONG =0, D_SELECT_SONG, D_VOLUME, D_EQUALIZER, D_REC_OPT, D_MAX_OPTIONS }DISPLAY_E;
 
 typedef struct _track
 {
