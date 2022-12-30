@@ -60,7 +60,7 @@ static player_state_t m_state = { .version = PLAYER_CONFIG_VERSION,
                                   .cursor=0, .play_state=P_STOPED, .rec_state=R_STOPED, 
                                   .rec_opt={SRC_LINEIN, false, false, 0},
                                   .equalizer={{0,0,0,0,0,0,0,0,0,0}},
-                                  .volume={{100, 100, 100, 80 /*, 50, 50, 50*/}, 0},
+                                  .volume={{50, 50, 50, 50 /*, 50, 50, 50*/}, 0},
                                   .display=D_SONG };
 
 
@@ -329,6 +329,7 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
                 case AEL_STATE_INIT :
                     //fall throu
                 case AEL_STATE_STOPPED:
+               
                 case AEL_STATE_FINISHED:
                     if (el_state == AEL_STATE_INIT)
                     {
@@ -385,7 +386,9 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
                     break;
                 case AEL_STATE_INIT :
                 case AEL_STATE_STOPPED:
+                
                 case AEL_STATE_FINISHED:
+
                     if (AEL_STATE_INIT == el_state)
                     {
                         ESP_LOGI(TAG, "[ * ] Starting rec audio pipeline");
@@ -442,8 +445,10 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
             ESP_LOGI(TAG, "[ * ] Stope activated (%d,%d)", stw, str);
 
             if ( stw != AEL_STATE_RUNNING && stw != AEL_STATE_PAUSED && str != AEL_STATE_RUNNING && str != AEL_STATE_PAUSED)
-                m_state.display = (DISPLAY_E)((m_state.display + 1) % D_MAX_OPTIONS);
+                m_state.display = D_SELECT_SONG;
+            // LUC - setting display to D_SELECT_SONG when pressing STOP twice
         }
+
             break;
 
         case BT_FORWARD:
@@ -545,6 +550,52 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
 
                 //TODO:  Set equalizer in range -20db..20db
                 equalizer_set_gain_info(equalizer, m_state.equalizer.cursor, m_state.equalizer.bands[m_state.equalizer.cursor], true);
+            }
+             else if (m_state.display == D_SELECT_SONG)
+
+            { 
+                char song_dir[] = { '/','s','d','c','a','r','d','/','s','o','n','g','_',('1'+m_state.song->num),'\0' };
+                mkdir(song_dir, 0777);
+                m_state.song->cursor = 0;
+                for (int i=0; i<MAX_TRACKS; i++)
+                {
+                    struct stat st;
+                    char filename[32];
+                    sprintf(filename, "%s/track_%d.wav",song_dir, (i+1));
+                    m_state.song->tracks[i].len_in_sec = (stat(filename, &st) == ESP_OK)?
+                                                         (st.st_size / (2 * CONFIG_BITRATE_SAMPLING)): 0;
+                    if (m_state.song->cursor == i && !m_state.song->tracks[i].len_in_sec)
+                        m_state.song->cursor++;
+                }
+
+                //m_state.rec_selected_track = 0;
+                //m_state.play_selected_tracks = 0;
+                m_state.display = D_SONG;  
+
+               if (bt == ENC1_CW)
+               {
+                 if (m_state.rec_state != R_MUTE && m_state.rec_state != R_RECORDING &&
+                    m_state.play_state != P_PAUSE && m_state.play_state != P_PLAYING)
+                {
+                    int next = (m_state.song->num+1) % MAX_SONGS;
+                    m_state.song = &m_songs[next];
+                    m_state.song->num = next;
+                }
+            }
+                else if (bt == ENC1_CCW)
+                    {
+                if (m_state.rec_state != R_MUTE && m_state.rec_state != R_RECORDING &&
+                    m_state.play_state != P_PAUSE && m_state.play_state != P_PLAYING)
+                 {
+                    int prev = (m_state.song->num==0)? (MAX_SONGS-1): (m_state.song->num-1);
+                    m_state.song = &m_songs[prev];
+                    m_state.song->num = prev;
+                 }
+                }
+            }
+
+            {
+               
             }
             break; 
         default:
