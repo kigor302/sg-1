@@ -78,7 +78,7 @@ typedef struct _record_opt
 typedef struct _volume
 {
 	int bands[MAX_VOL_BANDS];
-	int cursor; /* 0 - play vloume, 1 - record volume, 2 - line-in, 3 - microphone, 4 - headset volume, 5 - speaker volume */
+	int cursor; /* 0 - play vloume, 1 - record volume left, 2 - record volume right, 3 - microphone, 4 - headset volume, 5 - speaker volume */
 	uint last_time_selected;
 }volume_t;
 
