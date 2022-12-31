@@ -56,13 +56,13 @@ static audio_element_handle_t  fatfs_stream_reader, i2s_stream_writer, /*mp3_dec
 static audio_element_handle_t  fatfs_stream_writer, i2s_stream_reader, wav_encoder, /*raw_reader,*/ resample_for_rec;
 static song_t m_songs[MAX_SONGS] = {0};
 static player_state_t m_state = { .version = PLAYER_CONFIG_VERSION,
-                                  .song=&m_songs[0], .play_selected_tracks=0x0, .rec_selected_track=1,
+                                  .song=&m_songs[0], .play_selected_tracks=0x0, .rec_selected_track=1, .played_times=0,
                                   .cursor=0, .play_state=P_STOPED, .rec_state=R_STOPED, 
                                   .rec_opt={SRC_LINEIN, false, false, 0},
                                   .equalizer={{0,0,0,0,0,0,0,0,0,0}},
                                   .volume={{50, 50, 50, 50 /*, 50, 50, 50*/}, 0},
-                                  .display=D_SONG };
-
+                                  .display=D_SONG,
+                                  .song_idx=0 };
 
 #define GPIO_OUTPUT_IO_MICSEL   22
 #define GPIO_OUTPUT_AUDIO_VCC   22
@@ -95,25 +95,42 @@ static void gpio_set(int gpio, int bSet)
 static bool saveload_config(bool bsave)
 {
     char config_file_name[] = { '/','s','d','c','a','r','d','/','c','f','g','_',m_state.version,'.','b','i','n','\0' };
-    FILE * f = fopen(config_file_name,(bsave)?"wb":"rb");
+    char songs_file_name[] = { '/','s','d','c','a','r','d','/','s','o','n','g','s','_',m_state.version,'.','b','i','n','\0' };
+    FILE * fc = fopen(config_file_name,(bsave)?"wb":"rb");
+    FILE * fs = fopen(songs_file_name,(bsave)?"wb":"rb");
     bool bresult = false;
 
-    if (f != NULL)
+    if (fc != NULL && fs != NULL)
     {
-        if (bsave)
-            bresult = (sizeof(player_state_t) == fwrite(&m_state,1,sizeof(player_state_t),f));
-        else
-            bresult = (sizeof(player_state_t) == fread(&m_state,1,sizeof(player_state_t),f));
-        fclose(f);
+        if (bsave) {
+            bresult = (0 < fwrite(&m_state,1,sizeof(player_state_t),fc) && 
+                       0 < fwrite(&m_songs,MAX_SONGS,sizeof(song_t),fs));
+
+        }
+        else {
+            bresult = (0 < fread(&m_state,1,sizeof(player_state_t),fc) &&
+                       0 < fread(&m_songs,MAX_SONGS,sizeof(song_t),fs));
+            if (bresult) {
+                m_state.song_idx = m_state.song_idx % MAX_SONGS;
+                m_state.song = &m_songs[m_state.song_idx];
+            }
+        }
     }
+
+    if (fc != NULL)
+        fclose(fc);
+    if (fs != NULL)
+        fclose(fs);
     
     return (bresult);
 }
 
 static void pots_ctrl_proc(POTS_E pot, int value)
 {
+    static DISPLAY_E saved_display = D_MAX_OPTIONS;
+
     /* 0 - play vloume, 1 - record volume*/
-    int curs =  (pot == POTS_PLAY)? 0:
+    int curs =  (pot == POTS_PLAY)? AUDIO_HAL_VOL_OUT_DAC: /*0:*/
                 (pot == POTS_REC)?  2:
                 (pot == POTS_TONE)? 3:
                 -1;
@@ -143,10 +160,24 @@ static void pots_ctrl_proc(POTS_E pot, int value)
             m_state.volume.bands[curs] = value;
             audio_hal_set_volume_ex(board_handle->audio_hal, m_state.volume.bands[curs], 
                                    (audio_hal_volume_src_t)curs, AUDIO_HAL_VOL_CHANNEL_BOTH);
+            /*
+            audio_hal_set_volume_ex(board_handle->audio_hal, m_state.volume.bands[curs], 
+                                   AUDIO_HAL_VOL_OUT_HEADPHONE or AUDIO_HAL_VOL_OUT_SPK , AUDIO_HAL_VOL_CHANNEL_BOTH);
+            */
+        }
+
+
+        if (saved_display == D_MAX_OPTIONS) {
+            saved_display = m_state.display;
+            m_state.display = D_VOLUME;
         }
 
         if (m_state.display == D_VOLUME)
             display_player_state(&m_state);
+    }
+    else if (saved_display != D_MAX_OPTIONS) {
+        m_state.display = saved_display;
+        saved_display = D_MAX_OPTIONS; 
     }
 
     ESP_LOGW(TAG, "[ * ] POTS control %d, value %d", pot, value);
@@ -225,7 +256,12 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
         #endif
         
         case ENC1_SW/*BT_SET*/:
-            if (m_state.display == D_SONG)
+            if (m_state.display == D_SELECT_SONG)
+            {
+                button_ctrl_proc(BT_REFRESH, EVT_PRESSED);
+                return;
+            }
+            else if (m_state.display == D_SONG)
             {
                 if (m_state.song->cursor >= MAX_TRACKS) 
                     m_state.rec_selected_track = (m_state.rec_selected_track != (m_state.song->cursor-MAX_TRACKS+1))? 
@@ -243,7 +279,7 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
                 //m_state.volume.bands[m_state.volume.cursor] = ((m_state.volume.bands[m_state.volume.cursor]+10) % 100);
                 m_state.volume.cursor = (m_state.volume.cursor+1) % MAX_VOL_BANDS;
                 //audio_hal_set_volume_ex(board_handle->audio_hal, m_state.volume.bands[m_state.volume.cursor], 
-                //                    (audio_hal_volume_src_t)m_state.volume.cursor, AUDIO_HAL_VOL_CHANNEL_BOTH);
+                //                        (audio_hal_volume_src_t)m_state.volume.cursor, AUDIO_HAL_VOL_CHANNEL_BOTH);
             }
             else if (m_state.display == D_EQUALIZER)
             {
@@ -255,7 +291,7 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
             }
             else if (m_state.display == D_REC_OPT)
             {
-                if (m_state.rec_opt.cursor == 0)
+                if (m_state.rec_opt.cursor == 0) // Record source
                 {
                     m_state.rec_opt.rec_source = (REC_SOURCE_E)!m_state.rec_opt.rec_source;
                     audio_hal_ctrl_codec(board_handle->audio_hal, 
@@ -263,19 +299,19 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
                                                                   AUDIO_HAL_CODEC_MODE_LINE_IN),
                         AUDIO_HAL_CTRL_START);
                 }
-                else if (m_state.rec_opt.cursor == 1)
+                else if (m_state.rec_opt.cursor == 1) //Monitor enable (AC101 codec only)
                 {
                     m_state.rec_opt.bmonitor = !m_state.rec_opt.bmonitor;
                     audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_PASSTHROUGH, 
                                         (m_state.rec_opt.bmonitor? AUDIO_HAL_CTRL_START: AUDIO_HAL_CTRL_STOP));
                 }
-                else if (m_state.rec_opt.cursor == 2)
+                else if (m_state.rec_opt.cursor == 2) // Toogle record mixer (AC101 codec only)
                 {
                     m_state.rec_opt.brecordmix = !m_state.rec_opt.brecordmix;
                     audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_RECORD_MIX, 
                                         (m_state.rec_opt.brecordmix? AUDIO_HAL_CTRL_START: AUDIO_HAL_CTRL_STOP));
                 }
-                else if (m_state.rec_opt.cursor == 3)
+                else if (m_state.rec_opt.cursor == 3) //Save configuration 
                 {
                     bool bsaved = saveload_config(true);
                     ESP_LOGI(TAG, "[ * ] Configuration save %s !!", (bsaved?"success":"failed"));
@@ -347,6 +383,7 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
                         m_state.play_state = P_PLAYING;
                         set_led(OUT_LED_GREEN, true);
                         m_state.playing_tracks = track_num;
+                        m_state.played_times = 0;
                     }
                     else if (!track_num)
                     {
@@ -442,11 +479,17 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
             set_led(OUT_LED_GREEN, false);
             set_led(OUT_LED_RED, false);
 
-            ESP_LOGI(TAG, "[ * ] Stope activated (%d,%d)", stw, str);
+            ESP_LOGI(TAG, "[ * ] Stop activated (%d,%d)", stw, str);
 
+            if (m_state.display == D_SELECT_SONG) 
+            {
+                button_ctrl_proc(BT_REFRESH, EVT_PRESSED);
+                return;
+            }
+
+            // LUC - setting display to D_SELECT_SONG when pressing STOP twice
             if ( stw != AEL_STATE_RUNNING && stw != AEL_STATE_PAUSED && str != AEL_STATE_RUNNING && str != AEL_STATE_PAUSED)
                 m_state.display = D_SELECT_SONG;
-            // LUC - setting display to D_SELECT_SONG when pressing STOP twice
         }
 
             break;
@@ -454,12 +497,13 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
         case BT_FORWARD:
             /* Fall down */
         case BT_REWARD:
+        case BT_REFRESH:
             if (bt == BT_REWARD)
             {
                 if (m_state.rec_state != R_MUTE && m_state.rec_state != R_RECORDING &&
                     m_state.play_state != P_PAUSE && m_state.play_state != P_PLAYING)
                 {
-                    int prev = (m_state.song->num==0)? (MAX_SONGS-1): (m_state.song->num-1);
+                    int prev = (m_state.song_idx==0)? (MAX_SONGS-1): (m_state.song_idx-1);
                     m_state.song = &m_songs[prev];
                     m_state.song->num = prev;
                 }
@@ -469,20 +513,28 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
                 if (m_state.rec_state != R_MUTE && m_state.rec_state != R_RECORDING &&
                     m_state.play_state != P_PAUSE && m_state.play_state != P_PLAYING)
                 {
-                    int next = (m_state.song->num+1) % MAX_SONGS;
+                    int next = (m_state.song_idx+1) % MAX_SONGS;
                     m_state.song = &m_songs[next];
                     m_state.song->num = next;
                 }
             }
+            else if (bt == BT_REFRESH)
+            {
+                m_state.song = &m_songs[m_state.song_idx];
+                m_state.song->num = m_state.song_idx;
+                bool bsaved = saveload_config(true);
+                ESP_LOGI(TAG, "[ * ] Configuration save %s !!", (bsaved?"success":"failed"));
+            }
 
             {
-                char song_dir[] = { '/','s','d','c','a','r','d','/','s','o','n','g','_',('1'+m_state.song->num),'\0' };
+                char song_dir[32];
+                sprintf(song_dir, "/sdcard/song_%d", (1+m_state.song->num));
                 mkdir(song_dir, 0777);
                 m_state.song->cursor = 0;
                 for (int i=0; i<MAX_TRACKS; i++)
                 {
                     struct stat st;
-                    char filename[32];
+                    char filename[64];
                     sprintf(filename, "%s/track_%d.wav",song_dir, (i+1));
                     m_state.song->tracks[i].len_in_sec = (stat(filename, &st) == ESP_OK)?
                                                          (st.st_size / (2 * CONFIG_BITRATE_SAMPLING)): 0;
@@ -521,8 +573,6 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
                 else
                     m_state.rec_opt.cursor = (m_state.rec_opt.cursor==0)? (MAX_REC_OPTONS-1): (m_state.rec_opt.cursor-1);
             }
-
-
             else if (m_state.display == D_VOLUME)
             {
                 m_state.volume.bands[m_state.volume.cursor] = (uint)(m_state.volume.bands[m_state.volume.cursor]+((bt==ENC1_CW/*EN_VOLUME_UP*/)?5:-5));
@@ -551,51 +601,28 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
                 //TODO:  Set equalizer in range -20db..20db
                 equalizer_set_gain_info(equalizer, m_state.equalizer.cursor, m_state.equalizer.bands[m_state.equalizer.cursor], true);
             }
-             else if (m_state.display == D_SELECT_SONG)
-
+            else if (m_state.display == D_SELECT_SONG)
             { 
-                char song_dir[] = { '/','s','d','c','a','r','d','/','s','o','n','g','_',('1'+m_state.song->num),'\0' };
-                mkdir(song_dir, 0777);
-                m_state.song->cursor = 0;
-                for (int i=0; i<MAX_TRACKS; i++)
-                {
-                    struct stat st;
-                    char filename[32];
-                    sprintf(filename, "%s/track_%d.wav",song_dir, (i+1));
-                    m_state.song->tracks[i].len_in_sec = (stat(filename, &st) == ESP_OK)?
-                                                         (st.st_size / (2 * CONFIG_BITRATE_SAMPLING)): 0;
-                    if (m_state.song->cursor == i && !m_state.song->tracks[i].len_in_sec)
-                        m_state.song->cursor++;
-                }
-
-                //m_state.rec_selected_track = 0;
-                //m_state.play_selected_tracks = 0;
-                m_state.display = D_SONG;  
-
                if (bt == ENC1_CW)
                {
-                 if (m_state.rec_state != R_MUTE && m_state.rec_state != R_RECORDING &&
-                    m_state.play_state != P_PAUSE && m_state.play_state != P_PLAYING)
-                {
-                    int next = (m_state.song->num+1) % MAX_SONGS;
-                    m_state.song = &m_songs[next];
-                    m_state.song->num = next;
-                }
-            }
-                else if (bt == ENC1_CCW)
+                    if (m_state.rec_state != R_MUTE && m_state.rec_state != R_RECORDING &&
+                        m_state.play_state != P_PAUSE && m_state.play_state != P_PLAYING)
                     {
-                if (m_state.rec_state != R_MUTE && m_state.rec_state != R_RECORDING &&
-                    m_state.play_state != P_PAUSE && m_state.play_state != P_PLAYING)
-                 {
-                    int prev = (m_state.song->num==0)? (MAX_SONGS-1): (m_state.song->num-1);
-                    m_state.song = &m_songs[prev];
-                    m_state.song->num = prev;
-                 }
+                        int next = (m_state.song_idx+1) % MAX_SONGS;
+                        m_state.song = &m_songs[next];
+                        m_state.song_idx = m_state.song->num = next;
+                    }
                 }
-            }
-
-            {
-               
+                else if (bt == ENC1_CCW) 
+                {
+                    if (m_state.rec_state != R_MUTE && m_state.rec_state != R_RECORDING &&
+                        m_state.play_state != P_PAUSE && m_state.play_state != P_PLAYING)
+                    {
+                        int prev = (m_state.song_idx==0)? (MAX_SONGS-1): (m_state.song_idx-1);
+                        m_state.song = &m_songs[prev];
+                        m_state.song_idx = m_state.song->num = prev;
+                    }
+                }
             }
             break; 
         default:
@@ -629,8 +656,18 @@ void i2s_stream_event(audio_event_iface_msg_t * msg)
 
                 if (pipeline == pipeline_for_play)
                 {
-                    set_led(OUT_LED_GREEN, false);
-                    m_state.play_state = P_STOPED;
+                    if (++m_state.played_times < 4)
+                    {
+                        ESP_LOGI(TAG, "[ * ] Loop track: %d", m_state.played_times);
+                        audio_pipeline_reset_elements(pipeline);
+                        audio_pipeline_run(pipeline);
+                    }
+                    else
+                    {
+                        set_led(OUT_LED_GREEN, false);
+                        m_state.play_state = P_STOPED;
+                    }
+
                 }
                 else
                 {
@@ -896,8 +933,7 @@ void app_main(void)
     gpio_set(GPIO_OUTPUT_AUDIO_VCC, 1);
     gpio_set(GPIO_OUTPUT_IO_PREAMP, 1);
 
-    button_ctrl_proc(BT_FORWARD, EVT_PRESSED);
-    button_ctrl_proc(BT_REWARD, EVT_PRESSED);
+    button_ctrl_proc(BT_REFRESH, EVT_PRESSED);
 
     ESP_LOGW(TAG, "[ 5 ] Press the keys to control music player:");
     ESP_LOGW(TAG, "      [Play/Record] to start/Record, pause/mute and resume, [<< / >>] Stop and go to next song.");

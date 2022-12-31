@@ -241,9 +241,13 @@ static void gpio_task_loop(void* arg)
         int val = (int)getAdcValue();
         if (abs(pots_values[cur_pot] - val) >= 100) {
         	m_pots_callback_func(cur_pot, (val + 25)/41);
-        	cur_pot_ticks = 3;
+        	cur_pot_ticks = 4;
         	pots_values[cur_pot] = val;
         }
+        else if (cur_pot_ticks == 2) {
+        	cur_pot_ticks = 1;
+        	m_pots_callback_func(MAX_POTS, 0);
+        } 
         if (--cur_pot_ticks <= 0) {
         	cur_pot = (cur_pot + 1) % MAX_POTS;
         	cur_pot_ticks = 1;
@@ -668,13 +672,16 @@ void show_display_recoptions(player_state_t * state)
 
 static void show_display_selectsong(player_state_t * state)
 {
+	char msg[32];
 
-SSD1306_Clear(&m_Dev_I2C, false);
-//SSD1306_SetFont(&m_Dev_I2C, &Font_Ubuntu_Mono_6x10);
+	sprintf(msg, "Select Song_%d", (state->song->num+1));
 
-FontDrawAnchoredString(&m_Dev_I2C, "Song Selector", TextAnchor_North, true);
+	SSD1306_Clear(&m_Dev_I2C, false);
+	SSD1306_SetFont(&m_Dev_I2C, &Font_Ubuntu_Mono_6x10);
 
-SSD1306_Update(&m_Dev_I2C);
+	FontDrawAnchoredString(&m_Dev_I2C, msg, TextAnchor_North, true);
+
+	SSD1306_Update(&m_Dev_I2C);
 }
 
 void display_player_state(player_state_t * state)

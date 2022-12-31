@@ -16,7 +16,7 @@
 #define GPIO_INPUT_PIN_SEL    (1ULL<<GPIO_INT_IO_PIN)
 #define GPIO_PREAMP_IO_PIN	  (19)
 
-#define MAX_SONGS			  (99)
+#define MAX_SONGS			  (50)
 #define MAX_TRACKS			  (5)
 #define MAX_EQ_BANDS		  (10)
 #define MAX_VOL_BANDS		  (4) /*8*/
@@ -33,7 +33,7 @@ typedef enum { LVL_6=0, LVL_5, LVL_4, LVL_3, LVL_2, LVL_1, RESERVED_A, RESERVED_
 #define OUT_LED_GREEN       PLAY_LED
 #define OUT_LED_RED         REC_LED
 typedef enum { ENC1_SW=0, ENC1_CW,  ENC1_CCW,  BT_REC,   BT_STOP,   BT_PLAY,    PLAY_LED,    REC_LED, 
-               POTS_EN,    BRG_A,  BRG_B,    BRG_INH,   STOP_LED,   BT_FORWARD/*RESERVED_X*/, BT_REWARD/*RESERVED_Y*/, OUT_OLED }CTRL_BUTTON_E;
+               POTS_EN,    BRG_A,  BRG_B,    BRG_INH,   STOP_LED,   BT_FORWARD/*RESERVED_X*/, BT_REWARD/*RESERVED_Y*/,OUT_OLED, BT_REFRESH }CTRL_BUTTON_E;
 
 //typedef enum { BT_LEFT=0, BT_RIGTH, BT_UP, BT_DOWN, BT_SET, BT_PLAY, BT_REC, BT_STOP, BT_FORWARD, 
 //	             BT_REWARD, EN_VOLUME_UP, EN_VOLUME_DOWN, BT_VOLUME_SW, OUT_LED_GREEN, OUT_LED_RED, OUT_OLED }CTRL_BUTTON_E;
@@ -88,7 +88,7 @@ typedef struct _equalizer
 	int cursor; /* 0 - first band selection */
 }equalizer_t;
 
-#define PLAYER_CONFIG_VERSION	'2'
+#define PLAYER_CONFIG_VERSION	'3'
 typedef struct _player_state
 {
 	char		version;
@@ -105,8 +105,10 @@ typedef struct _player_state
 	REC_STATE_E   rec_state;
 	int           recording_track;
 	int           playing_tracks;
+	int           played_times;
 
 	DISPLAY_E   display;
+	int         song_idx;
 
 }player_state_t;
 
