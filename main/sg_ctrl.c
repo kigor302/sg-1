@@ -222,30 +222,32 @@ static void gpio_task_loop(void* arg)
     uint32_t io_num;
     
     while (m_active) {
-        if (xQueueReceive(m_gpio_evt_queue, &io_num, (150 / portTICK_PERIOD_MS))) 
+        if (xQueueReceive(m_gpio_evt_queue, &io_num, (100 / portTICK_PERIOD_MS))) 
         {
         	if (gpio_get_level(io_num) == 0)
         	{
         		uint16_t sr = PCA9555_get((io_num==GPIO_INT_IO_PIN)?&m_pca9555_I2C:&m_pca9555_I2C_2);
             	ESP_LOGI(TAG, "GPIO[%d] intr, sr=0x%04x\n", io_num, sr);
             	pca9555_change_proc(io_num, sr);
+            	continue;
             }
         }
         else if (gpio_get_level(GPIO_INT_IO_PIN) == 0)
         {
         	 uint16_t sr = PCA9555_get(&m_pca9555_I2C);
         	 ESP_LOGW(TAG, "GPIO[%d] intr, val: %d sr=0x%04x\n", GPIO_INT_IO_PIN, gpio_get_level(GPIO_INT_IO_PIN), sr);
+        	 continue;
         }
 
         //Get analog voltage from POTS
         int val = (int)getAdcValue();
         int diff = abs(pots_values[cur_pot] - val);
-        if (diff >= 100 && diff <= 500) {
+        if (diff >= 100) {
 
         	ESP_LOGW(TAG, "cur_pot[%d] val: %d diff: %d\n", cur_pot, val, diff);
 
         	m_pots_callback_func(cur_pot, (val + 25)/41);
-        	cur_pot_ticks = 4;
+        	cur_pot_ticks =8;
         	pots_values[cur_pot] = val;
         }
         else if (cur_pot_ticks == 2) {
