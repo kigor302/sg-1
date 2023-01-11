@@ -457,8 +457,6 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
             {
                 audio_pipeline_stop(pipeline_for_play);
                 audio_pipeline_wait_for_stop(pipeline_for_play);
-                m_state.playing_tracks = 0;
-                m_state.played_times = 0;
             }
 
             if (AEL_STATE_RUNNING == (str = audio_element_get_state(i2s_stream_reader)))
@@ -658,7 +656,7 @@ void i2s_stream_event(audio_event_iface_msg_t * msg)
 
                 if (pipeline == pipeline_for_play)
                 {
-                    if (++m_state.played_times < 4 && m_state.playing_tracks)
+                    if (m_state.playing_tracks && ++m_state.played_times < 4)
                     {
                         audio_element_handle_t fatfs_el = audio_pipeline_get_el_by_tag(pipeline, "file");
 
