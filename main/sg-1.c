@@ -167,9 +167,9 @@ static void pots_ctrl_proc(POTS_E pot, int value)
         }
 
 
-        if (saved_display == D_MAX_OPTIONS) {
+        if (saved_display == D_MAX_OPTIONS && saved_display != D_VOLUME) {
             saved_display = m_state.display;
-            m_state.display = D_VOLUME;
+            //m_state.display = D_VOLUME;
         }
 
         if (m_state.display == D_VOLUME)
@@ -457,6 +457,8 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
             {
                 audio_pipeline_stop(pipeline_for_play);
                 audio_pipeline_wait_for_stop(pipeline_for_play);
+                m_state.playing_tracks = 0;
+                m_state.played_times = 0;
             }
 
             if (AEL_STATE_RUNNING == (str = audio_element_get_state(i2s_stream_reader)))
@@ -656,13 +658,11 @@ void i2s_stream_event(audio_event_iface_msg_t * msg)
 
                 if (pipeline == pipeline_for_play)
                 {
-                    if (++m_state.played_times < 4)
+                    if (++m_state.played_times < 4 && m_state.playing_tracks)
                     {
                         audio_element_handle_t fatfs_el = audio_pipeline_get_el_by_tag(pipeline, "file");
-                        //audio_element_handle_t i2s_el = audio_pipeline_get_el_by_tag(pipeline, "i2s");
-                        //audio_element_state_t el_state = audio_element_get_state(i2s_el);
 
-                        if ( fatfs_el && m_state.playing_tracks )
+                        if ( fatfs_el )
                         {
                             char track_name[64];
                             sprintf(track_name, "/sdcard/song_%d/track_%d.wav", m_state.song->num+1, m_state.playing_tracks);
