@@ -658,6 +658,18 @@ void i2s_stream_event(audio_event_iface_msg_t * msg)
                 {
                     if (++m_state.played_times < 4)
                     {
+                        audio_element_handle_t fatfs_el = audio_pipeline_get_el_by_tag(pipeline, "file");
+                        //audio_element_handle_t i2s_el = audio_pipeline_get_el_by_tag(pipeline, "i2s");
+                        //audio_element_state_t el_state = audio_element_get_state(i2s_el);
+
+                        if ( fatfs_el && m_state.playing_tracks )
+                        {
+                            char track_name[64];
+                            sprintf(track_name, "/sdcard/song_%d/track_%d.wav", m_state.song->num+1, m_state.playing_tracks);
+                            audio_element_set_uri(fatfs_el, track_name);
+                            ESP_LOGI(TAG, "[ * ] Starting to play track: %s", track_name);
+                        }
+
                         ESP_LOGI(TAG, "[ * ] Loop track: %d", m_state.played_times);
                         audio_pipeline_reset_elements(pipeline);
                         audio_pipeline_run(pipeline);
@@ -667,7 +679,6 @@ void i2s_stream_event(audio_event_iface_msg_t * msg)
                         set_led(OUT_LED_GREEN, false);
                         m_state.play_state = P_STOPED;
                     }
-
                 }
                 else
                 {

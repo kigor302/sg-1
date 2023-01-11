@@ -222,7 +222,7 @@ static void gpio_task_loop(void* arg)
     uint32_t io_num;
     
     while (m_active) {
-        if (xQueueReceive(m_gpio_evt_queue, &io_num, (300 / portTICK_PERIOD_MS))) 
+        if (xQueueReceive(m_gpio_evt_queue, &io_num, (150 / portTICK_PERIOD_MS))) 
         {
         	if (gpio_get_level(io_num) == 0)
         	{
@@ -239,7 +239,11 @@ static void gpio_task_loop(void* arg)
 
         //Get analog voltage from POTS
         int val = (int)getAdcValue();
-        if (abs(pots_values[cur_pot] - val) >= 100) {
+        int diff = abs(pots_values[cur_pot] - val);
+        if (diff >= 100 && diff <= 500) {
+
+        	ESP_LOGW(TAG, "cur_pot[%d] val: %d diff: %d\n", cur_pot, val, diff);
+
         	m_pots_callback_func(cur_pot, (val + 25)/41);
         	cur_pot_ticks = 4;
         	pots_values[cur_pot] = val;
