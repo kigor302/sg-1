@@ -317,6 +317,8 @@ esp_err_t init_ctrl_board()
     	return ret;
     }
 
+	gpio_pullup_en(GPIO36);
+	
 	//esp_log_level_set(TAG, ESP_LOG_INFO);
 
     //create a queue to handle gpio event from isr

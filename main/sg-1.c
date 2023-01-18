@@ -303,7 +303,7 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
                 else if (m_state.rec_opt.cursor == 1) //Monitor enable (AC101 codec only)
                 {
                     m_state.rec_opt.bmonitor = !m_state.rec_opt.bmonitor;
-                    gpio_set(GPIO_OUTPUT_IO_AMP_EN, !!m_state.rec_opt.bmonitor);
+                    gpio_set(GPIO_OUTPUT_IO_AMP_EN, !m_state.rec_opt.bmonitor);
                     audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_PASSTHROUGH, 
                                         (m_state.rec_opt.bmonitor? AUDIO_HAL_CTRL_START: AUDIO_HAL_CTRL_STOP));
                 }
@@ -889,7 +889,7 @@ void app_main(void)
 
     if ( (board_handle = audio_board_init()) )
     {
-        gpio_set(GPIO_OUTPUT_IO_AMP_EN, !!m_state.rec_opt.bmonitor);
+        gpio_set(GPIO_OUTPUT_IO_AMP_EN, !m_state.rec_opt.bmonitor);
         audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_PASSTHROUGH, 
                             (m_state.rec_opt.bmonitor? AUDIO_HAL_CTRL_START: AUDIO_HAL_CTRL_STOP));
 
