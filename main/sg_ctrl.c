@@ -223,7 +223,7 @@ static int cur_pot_ticks = 0;
 static void gpio_task_loop(void* arg)
 {
     uint32_t io_num;
-
+    
     while (m_active) {
         if (xQueueReceive(m_gpio_evt_queue, &io_num, (100 / portTICK_PERIOD_MS))) 
         {
@@ -320,8 +320,8 @@ esp_err_t init_ctrl_board()
     	return ret;
     }
 
-    //gpio_pullup_en(GPIO36);
-
+	gpio_pullup_en(GPIO36);
+	
 	//esp_log_level_set(TAG, ESP_LOG_INFO);
 
     //create a queue to handle gpio event from isr
