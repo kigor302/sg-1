@@ -83,9 +83,12 @@ static void check_efuse(void)
 static uint32_t getAdcValue()
 {
 	uint32_t adc_reading = 0;
+
+    adc_power_acquire();
     for (int i = 0; i < NO_OF_SAMPLES; i++) {
         adc_reading += adc1_get_raw((adc1_channel_t)ADC1_CHANNEL_0);
     }
+    adc_power_release();
     adc_reading /= NO_OF_SAMPLES;
     //ESP_LOGW(TAG,"Raw adc is: %d\n", adc_reading);
     return adc_reading;
@@ -220,7 +223,7 @@ static int cur_pot_ticks = 0;
 static void gpio_task_loop(void* arg)
 {
     uint32_t io_num;
-    
+
     while (m_active) {
         if (xQueueReceive(m_gpio_evt_queue, &io_num, (100 / portTICK_PERIOD_MS))) 
         {
@@ -316,6 +319,8 @@ esp_err_t init_ctrl_board()
     {
     	return ret;
     }
+
+    //gpio_pullup_en(GPIO36);
 
 	//esp_log_level_set(TAG, ESP_LOG_INFO);
 
