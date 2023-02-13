@@ -245,12 +245,14 @@ static void gpio_task_loop(void* arg)
         //Get analog voltage from POTS
         int val = (int)getAdcValue();
         int diff = abs(pots_values[cur_pot] - val);
-        if (diff >= 100) {
 
+        if (pots_values[cur_pot] == 0) {
+        	pots_values[cur_pot] = val;
+        }
+        else if (diff >= 100) {
         	ESP_LOGW(TAG, "cur_pot[%d] val: %d diff: %d\n", cur_pot, val, diff);
-
         	m_pots_callback_func(cur_pot, (val + 25)/41);
-        	cur_pot_ticks =8;
+        	cur_pot_ticks = 15;
         	pots_values[cur_pot] = val;
         }
         else if (cur_pot_ticks == 2) {
@@ -688,11 +690,14 @@ static void show_display_selectsong(player_state_t * state)
 	sprintf(msg, "Select Song_%d", (state->song->num+1));
 
 	SSD1306_Clear(&m_Dev_I2C, false);
-	SSD1306_SetFont(&m_Dev_I2C, &Font_Ubuntu_Mono_6x10);
+	//SSD1306_SetFont(&m_Dev_I2C, &Font_Ubuntu_Mono_6x10);
 
 	FontDrawAnchoredString(&m_Dev_I2C, msg, TextAnchor_North, true);
 
 	SSD1306_Update(&m_Dev_I2C);
+
+	/* Return back right font selection */
+	SSD1306_SetFont(&m_Dev_I2C, &Font_Liberation_Serif_19x19);
 }
 
 void display_player_state(player_state_t * state)

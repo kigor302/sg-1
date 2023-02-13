@@ -170,7 +170,8 @@ static void pots_ctrl_proc(POTS_E pot, int value)
 
         if (saved_display == D_MAX_OPTIONS && saved_display != D_VOLUME) {
             saved_display = m_state.display;
-            //m_state.display = D_VOLUME;
+            m_state.display = D_VOLUME;
+            m_state.volume.cursor = curs;
         }
 
         if (m_state.display == D_VOLUME)
@@ -179,6 +180,7 @@ static void pots_ctrl_proc(POTS_E pot, int value)
     else if (saved_display != D_MAX_OPTIONS) {
         m_state.display = saved_display;
         saved_display = D_MAX_OPTIONS; 
+        display_player_state(&m_state);
     }
 
     ESP_LOGW(TAG, "[ * ] POTS control %d, value %d", pot, value);
@@ -652,7 +654,7 @@ void i2s_stream_event(audio_event_iface_msg_t * msg)
                 audio_pipeline_handle_t pipeline = (msg->source == (void *)i2s_stream_writer)? pipeline_for_play: pipeline_for_record;
                 ESP_LOGW(TAG, "[ * ] Stop event received from i2s stream %s",((msg->source == (void *)i2s_stream_writer)? "Play": "Record"));
 
-                audio_pipeline_stop(pipeline);
+                //audio_pipeline_stop(pipeline);
                 audio_pipeline_wait_for_stop(pipeline);
                 audio_pipeline_reset_ringbuffer(pipeline);
 
@@ -661,7 +663,6 @@ void i2s_stream_event(audio_event_iface_msg_t * msg)
                     if (m_state.playing_tracks && ++m_state.played_times < 4)
                     {
                         audio_element_handle_t fatfs_el = audio_pipeline_get_el_by_tag(pipeline, "file");
-
                         if ( fatfs_el )
                         {
                             char track_name[64];
