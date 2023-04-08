@@ -27,6 +27,7 @@ static xQueueHandle m_gpio_evt_queue = NULL;
 static button_cb_t  m_evt_callback_func = NULL;
 static button2_cb_t m_evt_callback2_func = NULL;
 static pots_cb_t	m_pots_callback_func = NULL;
+static timer_cb_t   m_timer_callback_func = NULL;
 static struct SSD1306_Device m_Dev_I2C;
 static i2c_dev_t m_pca9555_I2C, m_pca9555_I2C_2;
 static uint16_t  m_last_pca9555_value, m_last_pca9555_value_2;
@@ -56,7 +57,7 @@ static uint32_t pca9555_io_pressed_time = 0;
 static int pca9555_io_pressed_key = -1;
 
 
-static const uint16_t pca9555_input_mask = 0x603F; //0x1FFF;
+static const uint16_t pca9555_input_mask = 0x403F; //0x603F;
 static const uint16_t pca9555_led_bits[3] = { (1<<PLAY_LED), (1<<REC_LED), (1<<STOP_LED) };
 static const uint16_t pca9555_oled_bit = (1<<OUT_OLED);
 
@@ -273,6 +274,9 @@ static void gpio_task_loop(void* arg)
         //	 ESP_LOGW(TAG, "GPIO[%d] intr, val: %d sr=0x%04x\n", GPIO_INT2_IO_PIN, gpio_get_level(GPIO_INT2_IO_PIN), sr);
         //}
 
+        if (m_timer_callback_func)
+        	m_timer_callback_func();
+
 #ifdef USE_ADS111X
         else
         {
@@ -301,6 +305,7 @@ int ResetSSDDisplay (struct SSD1306_Device* DeviceHandle)
 
 
 #define GPIO36  36
+#define GPIO39  39
 esp_err_t init_ctrl_board()
 {
 	esp_err_t ret = ESP_OK;
@@ -310,7 +315,7 @@ esp_err_t init_ctrl_board()
     //interrupt of falling edge
     io_conf.intr_type = GPIO_PIN_INTR_NEGEDGE;
     //bit mask of the pins, use GPIO4/5 here
-    io_conf.pin_bit_mask = (GPIO_INPUT_PIN_SEL /*| (1ULL << GPIO36)*/);
+    io_conf.pin_bit_mask = (GPIO_INPUT_PIN_SEL /*| (1ULL << GPIO39)*/);
     //set as input mode    
     io_conf.mode = GPIO_MODE_INPUT;
     //disable pull-down mode
@@ -323,6 +328,7 @@ esp_err_t init_ctrl_board()
     }
 
 	gpio_pullup_en(GPIO36);
+	gpio_pullup_en(GPIO39);
 	
 	//esp_log_level_set(TAG, ESP_LOG_INFO);
 
@@ -437,11 +443,12 @@ void clear_ctrl_board()
 }
 
 /* Control board initialization */
-void registrate_cb(button_cb_t cb, button2_cb_t cb2, pots_cb_t cb3)
+void registrate_cb(button_cb_t cb, button2_cb_t cb2, pots_cb_t cb3, timer_cb_t cb4)
 {
 	m_evt_callback_func = cb;
 	m_evt_callback2_func = cb2;
 	m_pots_callback_func = cb3;
+	m_timer_callback_func = cb4;
 }
 
 /* Control LED on board */

@@ -126,6 +126,33 @@ static bool saveload_config(bool bsave)
     return (bresult);
 }
 
+static void timer_ctrl_proc()
+{
+    static int times = 0;
+
+    if ( !(times++ % 10) )
+    {
+        int loudnes_ir=0, loudnes_il=0, loudnes_or=0, loudnes_ol=0, p=0, r=0;
+        audio_element_handle_t i2s_el = audio_pipeline_get_el_by_tag(pipeline_for_play, "i2s");
+        audio_element_handle_t i2s_el2 = audio_pipeline_get_el_by_tag(pipeline_for_record, "i2s");
+        if (audio_element_get_state(i2s_el) == AEL_STATE_RUNNING) {
+            i2s_get_loudness(i2s_el, 0, &loudnes_or);
+            i2s_get_loudness(i2s_el, 1, &loudnes_ol);
+            p = 1;
+        }
+        if (audio_element_get_state(i2s_el2) == AEL_STATE_RUNNING) {
+            i2s_get_loudness(i2s_el2, 0, &loudnes_ir);
+            i2s_get_loudness(i2s_el2, 1, &loudnes_il);
+            r = 1;
+        }
+        
+        if (loudnes_ir || loudnes_il || loudnes_or || loudnes_ol)
+        {
+            ESP_LOGW(TAG, "[ !!! ] Rec loudness %d/%d Play loudness %d/%d (%d,%d)", loudnes_ir, loudnes_il, loudnes_or, loudnes_ol, r, p);
+        }
+    }
+}
+
 static void pots_ctrl_proc(POTS_E pot, int value)
 {
     static DISPLAY_E saved_display = D_MAX_OPTIONS;
@@ -938,7 +965,7 @@ void app_main(void)
 
     ESP_LOGI(TAG, "[4.3] Initialize control board");
     if (ESP_OK == init_ctrl_board())
-        registrate_cb(button_ctrl_proc, button2_ctrl_proc, pots_ctrl_proc);
+        registrate_cb(button_ctrl_proc, button2_ctrl_proc, pots_ctrl_proc, timer_ctrl_proc);
 
     ESP_LOGI(TAG, "[4.4] Set pream off & mic to internal %d", gpio_get_level(GPIO_NUM_39));
     allgpios_config();

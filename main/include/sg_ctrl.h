@@ -116,12 +116,14 @@ typedef struct _player_state
 typedef void (*button_cb_t)(CTRL_BUTTON_E bt, EVT_BUTTON_E evt);
 typedef void (*button2_cb_t)(CTRL2_BUTTON_E bt, EVT_BUTTON_E evt);
 typedef void (*pots_cb_t)(POTS_E pot, int value);
+typedef void (*timer_cb_t)(void);
 
 /* Control board initialization */
 esp_err_t init_ctrl_board();
 
+
 /* Control board initialization */
-void registrate_cb(button_cb_t cb, button2_cb_t cb2, pots_cb_t cb3);
+void registrate_cb(button_cb_t cb, button2_cb_t cb2, pots_cb_t cb3, timer_cb_t cb4);
 
 /* Control LED on board */
 void set_led(CTRL_BUTTON_E led, bool bOn);
