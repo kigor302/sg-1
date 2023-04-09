@@ -131,6 +131,9 @@ void set_led(CTRL_BUTTON_E led, bool bOn);
 /* Show current state to OLED display */
 void display_player_state(player_state_t * state);
 
+/* Update volume bar on the display */
+void display_update_volume(player_state_t * state, int il, int ir, int ol, int or);
+
 void display_clear(void);
 
 /* Control second board outputs */

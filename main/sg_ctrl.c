@@ -1,4 +1,5 @@
 #include <stdarg.h>
+#include <math.h>
 #include <string.h>
 #include <stdlib.h>
 #include <esp_timer.h>
@@ -565,6 +566,40 @@ static void draw_track(struct SSD1306_Device * DeviceHandle, int track_num, bool
 	}
 }
 
+static void draw_bars(int left, int top, int right, int bottom, int lval, int rval)
+{
+	//value range is 0-64000 display logaritmic and fit to bar
+	int bar_height = (bottom - top);
+	int bar_mid = (right + left)/2;
+	int lfull = bottom - (((int)sqrt(lval)) * bar_height)/252;
+	int rfull = bottom - (((int)sqrt(rval)) * bar_height)/252;
+
+	SSD1306_DrawRect(&m_Dev_I2C, left, top, bar_mid, lfull, false);
+	SSD1306_DrawEmptyRect(&m_Dev_I2C, left, top, bar_mid, lfull, (lval>10));
+	SSD1306_DrawRect(&m_Dev_I2C, left, lfull, bar_mid, bottom, (lval>10));
+	
+	SSD1306_DrawRect(&m_Dev_I2C, bar_mid, top, right, rfull, false);
+	SSD1306_DrawEmptyRect(&m_Dev_I2C, bar_mid, top, right, rfull, (rval>10));
+	SSD1306_DrawRect(&m_Dev_I2C, bar_mid, rfull, right, bottom, (rval>10));
+}
+
+#define PLAYREC_STATE (1)
+void display_update_volume(player_state_t * state, int il, int ir, int ol, int or)
+{
+	int bar_top = (19);
+	int bar_bottom = (m_Dev_I2C.Height-19);
+	int x_mid = (m_Dev_I2C.Width/2);
+	int width = (8*2);
+	int offset = 4;
+
+	if (state->display != D_SONG)
+		return;
+
+	draw_bars(x_mid-width-offset, bar_top, x_mid-offset, bar_bottom, ol, or);
+	draw_bars(x_mid+offset, bar_top, x_mid+width+offset, bar_bottom, il, ir);
+
+	SSD1306_Update(&m_Dev_I2C);
+}
 
 static void show_display_song(player_state_t * state)
 {
@@ -609,6 +644,8 @@ static void show_display_song(player_state_t * state)
 	}
 	
 	SSD1306_Update(&m_Dev_I2C);
+
+
 
 	//int64_t stop = GetMicro();
 	//ESP_LOGW(TAG, "* It take %d usec to draw song!!!", (int)(stop - start)); 

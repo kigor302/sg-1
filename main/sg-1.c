@@ -149,6 +149,7 @@ static void timer_ctrl_proc()
         if (loudnes_ir || loudnes_il || loudnes_or || loudnes_ol)
         {
             ESP_LOGW(TAG, "[ !!! ] Rec loudness %d/%d Play loudness %d/%d (%d,%d)", loudnes_ir, loudnes_il, loudnes_or, loudnes_ol, r, p);
+            display_update_volume(&m_state, loudnes_il, loudnes_ir, loudnes_ol, loudnes_or);
         }
     }
 }
