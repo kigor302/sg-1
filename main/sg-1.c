@@ -44,7 +44,6 @@
 #include "sg1.h"
 #include "sg_ctrl.h"
 
-
 static const char *TAG = "SG-1";
 
 //#define USE_WIFI
@@ -64,6 +63,8 @@ static player_state_t m_state = { .version = PLAYER_CONFIG_VERSION,
                                   .display=D_SONG,
                                   .song_idx=0 };
 
+#define DUMMY_TRACK             100
+#define DUMMY_FILE              "/sdcard/dummy.wav"
 #define GPIO_OUTPUT_IO_MICSEL   22
 #define GPIO_OUTPUT_AUDIO_VCC   22
 #define GPIO_OUTPUT_IO_PREAMP   19
@@ -404,10 +405,17 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
                         ESP_LOGI(TAG, "[ * ] Starting play audio pipeline");
                     }
 
+                    /* Dummy track */
+                    if (!track_num)
+                        track_num = DUMMY_TRACK;
+
                     if ( fatfs_el && track_num )
                     {
                         char track_name[64];
-                        sprintf(track_name, "/sdcard/song_%d/track_%d.wav", m_state.song->num+1, track_num);
+                        if (track_num == DUMMY_TRACK)
+                            sprintf(track_name, DUMMY_FILE);
+                        else    
+                            sprintf(track_name, "/sdcard/song_%d/track_%d.wav", m_state.song->num+1, track_num);
                         audio_element_set_uri(fatfs_el, track_name);
                         ESP_LOGI(TAG, "[ * ] Starting to play track: %s", track_name);
                         audio_pipeline_reset_elements(pipeline);
@@ -694,7 +702,10 @@ void i2s_stream_event(audio_event_iface_msg_t * msg)
                         if ( fatfs_el )
                         {
                             char track_name[64];
-                            sprintf(track_name, "/sdcard/song_%d/track_%d.wav", m_state.song->num+1, m_state.playing_tracks);
+                            if (m_state.playing_tracks == DUMMY_TRACK)
+                                sprintf(track_name, DUMMY_FILE);
+                            else    
+                                sprintf(track_name, "/sdcard/song_%d/track_%d.wav", m_state.song->num+1, m_state.playing_tracks);
                             audio_element_set_uri(fatfs_el, track_name);
                             ESP_LOGI(TAG, "[ * ] Starting to play track: %s", track_name);
                         }
@@ -871,7 +882,6 @@ static struct audio_pipeline * setup_play_pipeline(const char * url)
 
     return pipeline;
 }
-
 
 
 void app_main(void)
