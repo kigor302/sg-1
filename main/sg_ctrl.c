@@ -712,7 +712,8 @@ void show_display_recoptions(player_state_t * state)
 	FontDrawStringUnaligned(&m_Dev_I2C, msg[0], 1, (y_offset += 12), true);
 	sprintf(msg[1], "Monitor: %s", (state->rec_opt.bmonitor)? "on": "off");
 	FontDrawStringUnaligned(&m_Dev_I2C, msg[1], 1, (y_offset += 12), true);
-	sprintf(msg[2], "Record mix: %s", (state->rec_opt.brecordmix)? "yes": "no");
+//	sprintf(msg[2], "Record mix: %s", (state->rec_opt.brecordmix)? "yes": "no");
+    sprintf(msg[2], "Preamp : %s", (state->rec_opt.brecordmix)? "on": "off");
 	FontDrawStringUnaligned(&m_Dev_I2C, msg[2], 1, (y_offset += 12), true);
 	sprintf(msg[3], "Save Configuration");
 	FontDrawStringUnaligned(&m_Dev_I2C, msg[3], 1, (y_offset += 12), true);
