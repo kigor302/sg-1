@@ -251,7 +251,7 @@ static void gpio_task_loop(void* arg)
         if (pots_values[cur_pot] == 0) {
         	pots_values[cur_pot] = val;
         }
-        else if (diff >= 100) {
+        else if (diff >= 130) {
         	ESP_LOGW(TAG, "cur_pot[%d] val: %d diff: %d\n", cur_pot, val, diff);
         	m_pots_callback_func(cur_pot, (val + 25)/41);
         	cur_pot_ticks = 15;

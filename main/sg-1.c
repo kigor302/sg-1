@@ -197,6 +197,7 @@ static void pots_ctrl_proc(POTS_E pot, int value)
         }
 
 
+        /* ============== display jumping issue ========================
         if (saved_display == D_MAX_OPTIONS && saved_display != D_VOLUME) {
             saved_display = m_state.display;
             m_state.display = D_VOLUME;
@@ -205,6 +206,7 @@ static void pots_ctrl_proc(POTS_E pot, int value)
 
         if (m_state.display == D_VOLUME)
             display_player_state(&m_state);
+        * ============================================================== */
     }
     else if (saved_display != D_MAX_OPTIONS) {
         m_state.display = saved_display;
@@ -299,12 +301,12 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
                     m_state.rec_selected_track = (m_state.rec_selected_track != (m_state.song->cursor-MAX_TRACKS+1))? 
                                                   (m_state.song->cursor-MAX_TRACKS+1): 0;
                 else 
-                    m_state.play_selected_tracks = (m_state.play_selected_tracks & (1<<m_state.song->cursor))? 0:
-                                                   (1<<m_state.song->cursor); //Right now only one track is selected
+                    //m_state.play_selected_tracks = (m_state.play_selected_tracks & (1<<m_state.song->cursor))? 0:
+                    //                               (1<<m_state.song->cursor); //Right now only one track is selected
 
-                    //m_state.play_selected_tracks = (m_state.play_selected_tracks & (1<<m_state.song->cursor))? 
-                    //                       (m_state.play_selected_tracks & ~(1<<m_state.song->cursor)):
-                    //                       (m_state.play_selected_tracks | (1<<m_state.song->cursor));
+                    m_state.play_selected_tracks = (m_state.play_selected_tracks & (1<<m_state.song->cursor))? 
+                                           (m_state.play_selected_tracks & ~(1<<m_state.song->cursor)):
+                                           (m_state.play_selected_tracks | (1<<m_state.song->cursor));
             }
             else if (m_state.display == D_VOLUME)
             {
@@ -530,6 +532,12 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
             // LUC - setting display to D_SELECT_SONG when pressing STOP twice
             if ( stw != AEL_STATE_RUNNING && stw != AEL_STATE_PAUSED && str != AEL_STATE_RUNNING && str != AEL_STATE_PAUSED)
                 m_state.display = D_SELECT_SONG;
+
+            // LUC Select last recorded track
+            if (str == AEL_STATE_RUNNING) {
+                m_state.play_selected_tracks = m_state.rec_selected_track;
+                m_state.rec_selected_track = (m_state.rec_selected_track + 1) % MAX_TRACKS;
+            }
         }
 
             break;
@@ -581,6 +589,12 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
                     if (m_state.song->cursor == i && !m_state.song->tracks[i].len_in_sec)
                         m_state.song->cursor++;
                 }
+
+                if (m_state.song->cursor) {
+                    m_state.play_selected_tracks = m_state.song->cursor-1;
+                    m_state.rec_selected_track = m_state.song->cursor;
+                }
+
 
                 //m_state.rec_selected_track = 0;
                 //m_state.play_selected_tracks = 0;
