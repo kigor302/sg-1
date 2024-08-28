@@ -343,6 +343,7 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
                 else if (m_state.rec_opt.cursor == 2) // Toogle record mixer (AC101 codec only)
                 {
                     m_state.rec_opt.brecordmix = !m_state.rec_opt.brecordmix;
+                    gpio_set(GPIO_OUTPUT_IO_PREAMP, m_state.rec_opt.brecordmix);
                     audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_RECORD_MIX, 
                                         (m_state.rec_opt.brecordmix? AUDIO_HAL_CTRL_START: AUDIO_HAL_CTRL_STOP));
                 }
@@ -532,8 +533,12 @@ static void button_ctrl_proc(CTRL_BUTTON_E bt, EVT_BUTTON_E evt)
             // LUC - setting display to D_SELECT_SONG when pressing STOP twice
             if ( stw != AEL_STATE_RUNNING && stw != AEL_STATE_PAUSED && str != AEL_STATE_RUNNING && str != AEL_STATE_PAUSED)
                 m_state.display = D_SELECT_SONG;
+<<<<<<< HEAD
 
             // LUC Select last recorded track
+=======
+               // LUC Select last recorded track
+>>>>>>> fc40a003d67f792143677913f7ccde2c14e82ad8
             if (str == AEL_STATE_RUNNING) {
                 m_state.play_selected_tracks = m_state.rec_selected_track;
                 m_state.rec_selected_track = (m_state.rec_selected_track + 1) % MAX_TRACKS;
@@ -710,7 +715,7 @@ void i2s_stream_event(audio_event_iface_msg_t * msg)
 
                 if (pipeline == pipeline_for_play)
                 {
-                    if (m_state.playing_tracks && ++m_state.played_times < 4)
+                    if (m_state.playing_tracks && ++m_state.played_times < 25) // set number of repeats 
                     {
                         audio_element_handle_t fatfs_el = audio_pipeline_get_el_by_tag(pipeline, "file");
                         if ( fatfs_el )
@@ -996,7 +1001,8 @@ void app_main(void)
     allgpios_config();
     //gpio_set(GPIO_OUTPUT_IO_MICSEL, 0);
     gpio_set(GPIO_OUTPUT_AUDIO_VCC, 1);
-    gpio_set(GPIO_OUTPUT_IO_PREAMP, 1);
+   // gpio_set(GPIO_OUTPUT_IO_PREAMP, 1);
+    gpio_set(GPIO_OUTPUT_IO_PREAMP, m_state.rec_opt.brecordmix);
 
     button_ctrl_proc(BT_REFRESH, EVT_PRESSED);
 
